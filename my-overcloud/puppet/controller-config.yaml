@@ -1,7 +1,7 @@
 heat_template_version: 2015-04-30
 
 description: >
-  A software config which runs manifests/overcloud_controller_pacemaker.pp
+  A software config which runs manifests/overcloud_controller.pp
 
 parameters:
   ConfigDebug:
@@ -26,13 +26,16 @@ resources:
         modulepath: /etc/puppet/modules:/opt/stack/puppet-modules:/usr/share/openstack-puppet/modules
       outputs:
       - name: result
+      inputs:
+      - name: step
+        type: Number
       config:
         list_join:
         - ''
-        - - get_file: manifests/overcloud_controller_pacemaker.pp
+        - - get_file: manifests/overcloud_controller.pp
           - {get_param: StepConfig}
 
 outputs:
   OS::stack_id:
-    description: The software config which runs overcloud_controller_pacemaker.pp
+    description: The software config which runs overcloud_controller.pp
     value: {get_resource: ControllerPuppetConfigImpl}

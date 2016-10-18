@@ -51,6 +51,13 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [CeilometerServiceBase, role_data, config_settings]
-          - ceilometer_redis_password: {get_param: RedisPassword}
+          - ceilometer::agent::central::coordination_url:
+              list_join:
+                - ''
+                - - 'redis://:'
+                  - {get_param: RedisPassword}
+                  - '@'
+                  - "%{hiera('redis_vip')}"
+                  - ':6379/'
       step_config: |
         include ::tripleo::profile::base::ceilometer::agent::central

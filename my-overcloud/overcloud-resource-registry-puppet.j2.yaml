@@ -10,7 +10,7 @@ resource_registry:
   OS::TripleO::Tasks::PackageUpdate: extraconfig/tasks/yum_update.yaml
 
 {% for role in roles %}
-  OS::TripleO::{{role.name}}: puppet/{{role.name.lower()}}-role.yaml
+  OS::TripleO::{{role.name}}: puppet/{{role.name.lower()}}.yaml
   OS::TripleO::{{role.name}}Config: puppet/{{role.name.lower()}}-config.yaml
   OS::TripleO::Tasks::{{role.name}}PreConfig: OS::Heat::None
   OS::TripleO::Tasks::{{role.name}}PostConfig: OS::Heat::None
@@ -99,7 +99,6 @@ resource_registry:
   OS::TripleO::Services::CinderBackup: OS::Heat::None
   OS::TripleO::Services::CinderScheduler: puppet/services/cinder-scheduler.yaml
   OS::TripleO::Services::CinderVolume: puppet/services/cinder-volume.yaml
-  OS::TripleO::Services::BlockStorageCinderVolume: puppet/services/cinder-volume.yaml
   OS::TripleO::Services::Core: OS::Heat::None
   OS::TripleO::Services::Keystone: puppet/services/keystone.yaml
   OS::TripleO::Services::GlanceApi: puppet/services/glance-api.yaml
@@ -188,7 +187,7 @@ resource_registry:
   OS::TripleO::Services::NovaIronic: OS::Heat::None
   OS::TripleO::Services::TripleoPackages: puppet/services/tripleo-packages.yaml
   OS::TripleO::Services::TripleoFirewall: puppet/services/tripleo-firewall.yaml
-  OS::TripleO::Services::OpenDaylightApi: OS::Heat::None
+  OS::TripleO::Services::OpenDaylight: OS::Heat::None
   OS::TripleO::Services::OpenDaylightOvs: OS::Heat::None
   OS::TripleO::Services::SensuClient: OS::Heat::None
 

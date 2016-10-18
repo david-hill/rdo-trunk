@@ -22,7 +22,7 @@ parameters:
 
 resources:
   MongoDbBase:
-    type: ../../database/mongodb.yaml
+    type: ../../database/mongodb-base.yaml
     properties:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}

@@ -90,8 +90,7 @@
     - OS::TripleO::Services::NovaIronic
     - OS::TripleO::Services::TripleoPackages
     - OS::TripleO::Services::TripleoFirewall
-    - OS::TripleO::Services::OpenDaylightApi
-    - OS::TripleO::Services::OpenDaylightOvs
+    - OS::TripleO::Services::OpenDaylight
     - OS::TripleO::Services::SensuClient
     - OS::TripleO::Services::FluentdClient
     - OS::TripleO::Services::VipHosts
@@ -125,7 +124,7 @@
 - name: BlockStorage
   ServicesDefault:
     - OS::TripleO::Services::CACerts
-    - OS::TripleO::Services::BlockStorageCinderVolume
+    - OS::TripleO::Services::CinderVolume
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::Ntp
     - OS::TripleO::Services::Timezone

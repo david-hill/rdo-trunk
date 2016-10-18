@@ -65,5 +65,6 @@ if [[ -n $(is_bootstrap_node) ]]; then
     nova-manage api_db sync
     nova-manage db online_data_migrations
     gnocchi-upgrade
-    sahara-db-manage --config-file /etc/sahara/sahara.conf upgrade head
+    #TODO(marios):someone from sahara needs to check this:
+    # sahara-db-manage --config-file /etc/sahara/sahara.conf upgrade head
 fi

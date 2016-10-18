@@ -33,7 +33,7 @@ parameters:
     default: 'cephfs'
   ManilaCephFSNativeCephFSConfPath:
     type: string
-    default: '/etc/ceph/ceph.conf'
+    default: '/etc/ceph/cephfs.conf'
   ManilaCephFSNativeCephFSAuthId:
     type: string
     default: 'manila'
