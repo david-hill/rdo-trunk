@@ -9,10 +9,9 @@ resource_registry:
 
 
 parameter_defaults:
-  ManilaCephFSNativeEnableBackend: true
   ManilaCephFSNativeBackendName: cephfsnative
   ManilaCephFSNativeDriverHandlesShareServers: false
-  ManilaCephFSNativeCephFSConfPath: '/etc/ceph/cephfs.conf'
+  ManilaCephFSNativeCephFSConfPath: '/etc/ceph/ceph.conf'
   ManilaCephFSNativeCephFSAuthId: 'manila'
   ManilaCephFSNativeCephFSClusterName: 'ceph'
   ManilaCephFSNativeCephFSEnableSnapshots: true

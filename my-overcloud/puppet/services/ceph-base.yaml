@@ -1,4 +1,4 @@
-heat_template_version: 2016-04-08
+heat_template_version: 2016-10-14
 
 description: >
   Ceph base service. Shared by all Ceph services.
@@ -29,9 +29,20 @@ parameters:
   GlanceRbdPoolName:
     default: images
     type: string
+  GlanceBackend:
+    default: swift
+    description: The short name of the Glance backend to use. Should be one
+      of swift, rbd, or file
+    type: string
+    constraints:
+    - allowed_values: ['swift', 'file', 'rbd']
   GnocchiRbdPoolName:
     default: metrics
     type: string
+  NovaEnableRbdBackend:
+    default: false
+    description: Whether to enable or not the Rbd backend for Nova
+    type: boolean
   NovaRbdPoolName:
     default: vms
     type: string
@@ -63,6 +74,16 @@ parameter_groups:
   parameters:
   - ControllerEnableCephStorage
 
+conditions:
+  glance_multiple_locations:
+    and:
+    - equals:
+      - get_param: GlanceBackend
+      - rbd
+    - equals:
+      - get_param: NovaEnableRbdBackend
+      - true
+
 outputs:
   role_data:
     description: Role data for the Ceph base service.
@@ -75,6 +96,12 @@ outputs:
         ceph::profile::params::manage_repo: false
         ceph::profile::params::authentication_type: cephx
         ceph::profile::params::fsid: {get_param: CephClusterFSID}
+        # FIXME(gfidente): we should not have to list the packages explicitly in the templates,
+        # but this has to stay until https://bugs.launchpad.net/puppet-ceph/+bug/1629933 is fixed
+        ceph::params::packages:
+          - ceph-base
+          - ceph-mon
+          - ceph-osd
         # NOTE: bind IP is found in Heat replacing the network name with the local node IP
         # for the given network; replacement examples (eg. for internal_api):
         # internal_api -> IP
@@ -122,3 +149,6 @@ outputs:
               CINDERBACKUP_POOL: {get_param: CinderBackupRbdPoolName}
               GLANCE_POOL: {get_param: GlanceRbdPoolName}
               GNOCCHI_POOL: {get_param: GnocchiRbdPoolName}
+      service_config_settings:
+        glance_api:
+          glance::api::show_multiple_locations: {if: [glance_multiple_locations, true, false]}

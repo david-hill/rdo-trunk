@@ -12,25 +12,25 @@ parameters:
     type: string
   cloud_name_ctlplane:
     type: string
-  hosts:
-    type: comma_delimited_list
   # FIXME(shardy) this can be comma_delimited_list when
   # https://bugs.launchpad.net/heat/+bug/1617019 is fixed
   enabled_services:
     type: string
   controller_ips:
     type: comma_delimited_list
+  logging_groups:
+    type: json
+  logging_sources:
+    type: json
   service_ips:
     type: json
   service_node_names:
     type: json
+  short_service_node_names:
+    type: json
   controller_names:
     type: comma_delimited_list
   memcache_node_ips:
-    type: comma_delimited_list
-  keystone_public_api_node_ips:
-    type: comma_delimited_list
-  keystone_admin_api_node_ips:
     type: comma_delimited_list
   NetVipMap:
     type: json
@@ -56,6 +56,15 @@ parameters:
       Heat action on performed top-level stack.
     constraints:
     - allowed_values: ['CREATE', 'UPDATE']
+  # NOTE(jaosorior): This is being set as IPA as it's the first
+  # CA we'll actually be testing out. But we can change this if
+  # people request it.
+  CertmongerCA:
+    type: string
+    default: 'IPA'
+  EnableInternalTLS:
+    type: boolean
+    default: false
 
 resources:
 
@@ -64,10 +73,6 @@ resources:
     properties:
       group: os-apply-config
       config:
-        hosts:
-          list_join:
-          - "\n"
-          - {get_param: hosts}
         hiera:
           datafiles:
             bootstrap_node:
@@ -77,6 +82,8 @@ resources:
             all_nodes:
               mapped_data:
                 map_merge:
+                  - tripleo::profile::base::logging::fluentd::fluentd_sources: {get_param: logging_sources}
+                  - tripleo::profile::base::logging::fluentd::fluentd_groups: {get_param: logging_groups}
                   - enabled_services: {get_param: enabled_services}
                   # This writes out a mapping of service_name_enabled: 'true'
                   # For any services not enabled, hiera foo_enabled will
@@ -120,6 +127,7 @@ resources:
                   # provides a mapping of service_name_ips to a list of IPs
                   - {get_param: service_ips}
                   - {get_param: service_node_names}
+                  - {get_param: short_service_node_names}
                   - controller_node_ips:
                       list_join:
                       - ','
@@ -136,22 +144,6 @@ resources:
                             list_join:
                             - "]','inet6:["
                             - {get_param: memcache_node_ips}
-                    keystone_public_api_node_ips:
-                      str_replace:
-                        template: "['SERVERS_LIST']"
-                        params:
-                          SERVERS_LIST:
-                            list_join:
-                            - "','"
-                            - {get_param: keystone_public_api_node_ips}
-                    keystone_admin_api_node_ips:
-                      str_replace:
-                        template: "['SERVERS_LIST']"
-                        params:
-                          SERVERS_LIST:
-                            list_join:
-                            - "','"
-                            - {get_param: keystone_admin_api_node_ips}
 
                     deploy_identifier: {get_param: DeployIdentifier}
                     update_identifier: {get_param: UpdateIdentifier}
@@ -210,15 +202,12 @@ resources:
                     cloud_name_storage: {get_param: cloud_name_storage}
                     cloud_name_storage_mgmt: {get_param: cloud_name_storage_mgmt}
                     cloud_name_ctlplane: {get_param: cloud_name_ctlplane}
+                    # TLS parameters
+                    certmonger_ca: {get_param: CertmongerCA}
+                    enable_internal_tls: {get_param: EnableInternalTLS}
 
 outputs:
   config_id:
     description: The ID of the allNodesConfigImpl resource.
     value:
       {get_resource: allNodesConfigImpl}
-  hosts_entries:
-    description: |
-      The content that should be appended to your /etc/hosts if you want to get
-      hostname-based access to the deployed nodes (useful for testing without
-      setting up a DNS).
-    value: {get_attr: [allNodesConfigImpl, config, hosts]}

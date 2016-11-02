@@ -214,8 +214,19 @@ resources:
       EndpointMap: {get_attr: [EndpointMap, endpoint_map]}
       DefaultPasswords: {get_attr: [DefaultPasswords, passwords]}
 
+  {{role.name}}HostsDeployment:
+    type: OS::Heat::StructuredDeployments
+    properties:
+      name: {{role.name}}HostsDeployment
+      config: {get_attr: [hostsConfig, config_id]}
+      servers: {get_attr: [{{role.name}}, attributes, nova_server_resource]}
+
   {{role.name}}AllNodesDeployment:
     type: OS::Heat::StructuredDeployments
+    depends_on:
+{% for role_inner in roles %}
+      - {{role_inner.name}}HostsDeployment
+{% endfor %}
     properties:
       name: {{role.name}}AllNodesDeployment
       config: {get_attr: [allNodesConfig, config_id]}
@@ -245,6 +256,15 @@ resources:
       EnabledServices: {get_attr: [{{role.name}}ServiceChain, role_data, service_names]}
       ServiceNetMap: {get_attr: [ServiceNetMap, service_net_map_lower]}
       ServiceHostnameList: {get_attr: [{{role.name}}, hostname]}
+      NetworkHostnameMap:
+        # Note (shardy) this somewhat complex yaql may be replaced
+        # with a map_deep_merge function in ocata.  It merges the
+        # list of maps, but appends to colliding lists so we can
+        # create a map of lists for all nodes for each network
+        yaql:
+          expression: dict($.data.where($ != null).flatten().selectMany($.items()).groupBy($[0], $[1], [$[0], $[1].flatten()]))
+          data:
+            - {get_attr: [{{role.name}}, hostname_map]}
 
   {{role.name}}:
     type: OS::Heat::ResourceGroup
@@ -292,8 +312,16 @@ resources:
                     services: {get_attr: [{{role.name}}ServiceChain, role_data, service_names]}
           ServiceNames: {get_attr: [{{role.name}}ServiceChain, role_data, service_names]}
           MonitoringSubscriptions: {get_attr: [{{role.name}}ServiceChain, role_data, monitoring_subscriptions]}
-          LoggingSources: {get_attr: [{{role.name}}ServiceChain, role_data, logging_sources]}
-          LoggingGroups: {get_attr: [{{role.name}}ServiceChain, role_data, logging_groups]}
+{% endfor %}
+
+  hostsConfig:
+    type: OS::TripleO::Hosts::SoftwareConfig
+    properties:
+      hosts:
+{% for role in roles %}
+        - list_join:
+            - '\n'
+            - {get_attr: [{{role.name}}, hosts_entry]}
 {% endfor %}
 
   allNodesConfig:
@@ -304,17 +332,29 @@ resources:
       cloud_name_storage: {get_param: CloudNameStorage}
       cloud_name_storage_mgmt: {get_param: CloudNameStorageManagement}
       cloud_name_ctlplane: {get_param: CloudNameCtlplane}
-      hosts:
-{% for role in roles %}
-        - list_join:
-            - '\n'
-            - {get_attr: [{{role.name}}, hosts_entry]}
-{% endfor %}
       enabled_services:
         list_join:
           - ','
 {% for role in roles %}
           - {get_attr: [{{role.name}}ServiceChain, role_data, service_names]}
+{% endfor %}
+      logging_groups:
+        yaql:
+          expression: >
+            $.data.groups.flatten()
+          data:
+            groups:
+{% for role in roles %}
+              - {get_attr: [{{role.name}}ServiceChain, role_data, logging_groups]}
+{% endfor %}
+      logging_sources:
+        yaql:
+          expression: >
+            $.data.sources.flatten()
+          data:
+            sources:
+{% for role in roles %}
+              - {get_attr: [{{role.name}}ServiceChain, role_data, logging_sources]}
 {% endfor %}
       controller_ips: {get_attr: [Controller, ip_address]}
       controller_names: {get_attr: [Controller, hostname]}
@@ -338,10 +378,16 @@ resources:
 {% for role in roles %}
               - {get_attr: [{{role.name}}IpListMap, service_hostnames]}
 {% endfor %}
+      short_service_node_names:
+        yaql:
+          expression: dict($.data.l.where($ != null).selectMany($.items()).groupBy($[0], $[1], [$[0], $[1].flatten()]))
+          data:
+            l:
+{% for role in roles %}
+              - {get_attr: [{{role.name}}IpListMap, short_service_hostnames]}
+{% endfor %}
       # FIXME(shardy): These require further work to move into service_ips
       memcache_node_ips: {get_attr: [ControllerIpListMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, MemcachedNetwork]}]}
-      keystone_public_api_node_ips: {get_attr: [ControllerIpListMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, KeystonePublicApiNetwork]}]}
-      keystone_admin_api_node_ips: {get_attr: [ControllerIpListMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, KeystoneAdminApiNetwork]}]}
       NetVipMap: {get_attr: [VipMap, net_ip_map]}
       RedisVirtualIP: {get_attr: [RedisVirtualIP, ip_address]}
       ServiceNetMap: {get_attr: [ServiceNetMap, service_net_map_lower]}
@@ -456,6 +502,10 @@ resources:
 
   UpdateWorkflow:
     type: OS::TripleO::Tasks::UpdateWorkflow
+    depends_on:
+{% for role in roles %}
+      - {{role.name}}AllNodesDeployment
+{% endfor %}
     properties:
       servers:
 {% for role in roles %}
@@ -482,6 +532,10 @@ resources:
   # Post deployment steps for all roles
   AllNodesDeploySteps:
     type: OS::TripleO::PostDeploySteps
+{% for role in roles %}
+    depends_on:
+      - {{role.name}}AllNodesDeployment
+{% endfor %}
     properties:
       servers:
 {% for role in roles %}
@@ -561,7 +615,36 @@ outputs:
       The content that should be appended to your /etc/hosts if you want to get
       hostname-based access to the deployed nodes (useful for testing without
       setting up a DNS).
-    value: {get_attr: [allNodesConfig, hosts_entries]}
+    value:
+      list_join:
+      - "\n"
+      - - {get_attr: [hostsConfig, hosts_entries]}
+      -
+        - str_replace:
+            template: IP  HOST
+            params:
+              IP: {get_attr: [VipMap, net_ip_map, external]}
+              HOST: {get_param: CloudName}
+        - str_replace:
+            template: IP  HOST
+            params:
+              IP: {get_attr: [VipMap, net_ip_map, ctlplane]}
+              HOST: {get_param: CloudNameCtlplane}
+        - str_replace:
+            template: IP  HOST
+            params:
+              IP: {get_attr: [VipMap, net_ip_map, internal_api]}
+              HOST: {get_param: CloudNameInternal}
+        - str_replace:
+            template: IP  HOST
+            params:
+              IP: {get_attr: [VipMap, net_ip_map, storage]}
+              HOST: {get_param: CloudNameStorage}
+        - str_replace:
+            template: IP  HOST
+            params:
+              IP: {get_attr: [VipMap, net_ip_map, storage_mgmt]}
+              HOST: {get_param: CloudNameStorageManagement}
   EnabledServices:
     description: The services enabled on each role
     value:
