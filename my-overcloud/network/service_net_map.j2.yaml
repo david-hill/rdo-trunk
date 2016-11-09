@@ -25,6 +25,7 @@ parameters:
       NeutronTenantNetwork: tenant
       CeilometerApiNetwork: internal_api
       AodhApiNetwork: internal_api
+      BarbicanApiNetwork: internal_api
       GnocchiApiNetwork: internal_api
       MongodbNetwork: internal_api
       CinderApiNetwork: internal_api
@@ -56,6 +57,7 @@ parameters:
       CephRgwNetwork: storage
       PublicNetwork: external
       OpendaylightApiNetwork: internal_api
+      MistralApiNetwork: internal_api
       # We special-case the default ResolveNetwork for the CephStorage role
       # for backwards compatibility, all other roles default to internal_api
       CephStorageHostnameResolveNetwork: storage

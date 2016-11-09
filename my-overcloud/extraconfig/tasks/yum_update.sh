@@ -44,6 +44,25 @@ fi
 
 pacemaker_status=$(systemctl is-active pacemaker)
 
+# Fix the redis/rabbit resource start/stop timeouts. See https://bugs.launchpad.net/tripleo/+bug/1633455
+# and https://bugs.launchpad.net/tripleo/+bug/1634851
+if [[ "$pacemaker_status" == "active" && \
+      "$(hiera -c /etc/puppet/hiera.yaml bootstrap_nodeid)" = "$(facter hostname)" ]] ; then
+    if pcs resource show rabbitmq | grep -E "start.*timeout=100"; then
+        pcs resource update rabbitmq op start timeout=200s
+    fi
+    if pcs resource show rabbitmq | grep -E "stop.*timeout=90"; then
+        pcs resource update rabbitmq op stop timeout=200s
+    fi
+    if pcs resource show redis | grep -E "start.*timeout=120"; then
+        pcs resource update redis op start timeout=200s
+    fi
+    if pcs resource show redis | grep -E "stop.*timeout=120"; then
+        pcs resource update redis op stop timeout=200s
+    fi
+fi
+
+
 if [[ "$pacemaker_status" == "active" ]] ; then
     echo "Pacemaker running, stopping cluster node and doing full package update"
     node_count=$(pcs status xml | grep -o "<nodes_configured.*/>" | grep -o 'number="[0-9]*"' | grep -o "[0-9]*")
@@ -59,6 +78,20 @@ else
     echo "Upgrading other packages is handled by config management tooling"
     echo -n "true" > $heat_outputs_path.update_managed_packages
     exit 0
+fi
+
+# Special-case OVS for https://bugs.launchpad.net/tripleo/+bug/1635205
+if [[ -n $(rpm -q --scripts openvswitch | awk '/postuninstall/,/*/' | grep "systemctl.*try-restart") ]]; then
+    echo "Manual upgrade of openvswitch - restart in postun detected"
+    mkdir OVS_UPGRADE || true
+    pushd OVS_UPGRADE
+    echo "Attempting to downloading latest openvswitch with yumdownloader"
+    yumdownloader --resolve openvswitch
+    echo "Updating openvswitch with nopostun option"
+    rpm -U --replacepkgs --nopostun ./*.rpm
+    popd
+else
+    echo "Skipping manual upgrade of openvswitch - no restart in postun detected"
 fi
 
 command=${command:-update}

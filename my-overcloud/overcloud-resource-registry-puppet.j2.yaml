@@ -99,6 +99,7 @@ resource_registry:
   # services
   OS::TripleO::Services: puppet/services/services.yaml
   OS::TripleO::Services::Apache: puppet/services/apache.yaml
+  OS::TripleO::Services::ApacheTLS: OS::Heat::None
   OS::TripleO::Services::CACerts: puppet/services/ca-certs.yaml
   OS::TripleO::Services::CephMon: OS::Heat::None
   OS::TripleO::Services::CephRgw: OS::Heat::None
@@ -188,6 +189,7 @@ resource_registry:
   OS::Tripleo::Services::ManilaBackendCephFs: OS::Heat::None
   OS::TripleO::Services::ComputeNeutronL3Agent: OS::Heat::None
   OS::TripleO::Services::ComputeNeutronMetadataAgent: OS::Heat::None
+  OS::TripleO::Services::BarbicanApi: OS::Heat::None
   OS::TripleO::Services::AodhApi: puppet/services/aodh-api.yaml
   OS::TripleO::Services::AodhEvaluator: puppet/services/aodh-evaluator.yaml
   OS::TripleO::Services::AodhNotifier: puppet/services/aodh-notifier.yaml

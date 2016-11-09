@@ -1,7 +1,7 @@
 heat_template_version: 2016-04-08
 
 description: >
-  Gnocchi service configured with Puppet
+  Openstack Mistral Engine service configured with Puppet
 
 parameters:
   ServiceNetMap:
@@ -18,13 +18,10 @@ parameters:
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
     type: json
-  MonitoringSubscriptionGnocchiStatsd:
-    default: 'overcloud-gnocchi-statsd'
-    type: string
 
 resources:
-  GnocchiServiceBase:
-    type: ./gnocchi-base.yaml
+  MistralBase:
+    type: ./mistral-base.yaml
     properties:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
@@ -32,16 +29,10 @@ resources:
 
 outputs:
   role_data:
-    description: Role data for the Gnocchi role.
+    description: Role data for the Mistral Engine role.
     value:
-      service_name: gnocchi_statsd
-      monitoring_subscription: {get_param: MonitoringSubscriptionGnocchiStatsd}
+      service_name: mistral_engine
       config_settings:
-        map_merge:
-          - get_attr: [GnocchiServiceBase, role_data, config_settings]
-          - tripleo.gnocchi_statsd.firewall_rules:
-              '140 gnocchi-statsd':
-                dport: 8125
-                proto: 'udp'
+        get_attr: [MistralBase, role_data, config_settings]
       step_config: |
-        include ::tripleo::profile::base::gnocchi::statsd
+        include ::tripleo::profile::base::mistral::engine

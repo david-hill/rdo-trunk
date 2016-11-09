@@ -5,6 +5,9 @@ parameter_defaults:
     AodhAdmin: {protocol: 'http', port: '8042', host: 'IP_ADDRESS'}
     AodhInternal: {protocol: 'http', port: '8042', host: 'IP_ADDRESS'}
     AodhPublic: {protocol: 'https', port: '13042', host: 'IP_ADDRESS'}
+    BarbicanAdmin: {protocol: 'http', port: '9311', host: 'IP_ADDRESS'}
+    BarbicanInternal: {protocol: 'http', port: '9311', host: 'IP_ADDRESS'}
+    BarbicanPublic: {protocol: 'https', port: '13311', host: 'IP_ADDRESS'}
     CeilometerAdmin: {protocol: 'http', port: '8777', host: 'IP_ADDRESS'}
     CeilometerInternal: {protocol: 'http', port: '8777', host: 'IP_ADDRESS'}
     CeilometerPublic: {protocol: 'https', port: '13777', host: 'IP_ADDRESS'}
@@ -37,6 +40,9 @@ parameter_defaults:
     ManilaAdmin: {protocol: 'http', port: '8786', host: 'IP_ADDRESS'}
     ManilaInternal: {protocol: 'http', port: '8786', host: 'IP_ADDRESS'}
     ManilaPublic: {protocol: 'https', port: '13786', host: 'IP_ADDRESS'}
+    MistralAdmin: {protocol: 'http', port: '8989', host: 'IP_ADDRESS'}
+    MistralInternal: {protocol: 'http', port: '8989', host: 'IP_ADDRESS'}
+    MistralPublic: {protocol: 'https', port: '13989', host: 'IP_ADDRESS'}
     MysqlInternal: {protocol: 'mysql+pymysql', port: '3306', host: 'IP_ADDRESS'}
     NeutronAdmin: {protocol: 'http', port: '9696', host: 'IP_ADDRESS'}
     NeutronInternal: {protocol: 'http', port: '9696', host: 'IP_ADDRESS'}
