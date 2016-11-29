@@ -62,24 +62,6 @@ if [[ "$pacemaker_status" == "active" && \
     fi
 fi
 
-
-if [[ "$pacemaker_status" == "active" ]] ; then
-    echo "Pacemaker running, stopping cluster node and doing full package update"
-    node_count=$(pcs status xml | grep -o "<nodes_configured.*/>" | grep -o 'number="[0-9]*"' | grep -o "[0-9]*")
-    if [[ "$node_count" == "1" ]] ; then
-        echo "Active node count is 1, stopping node with --force"
-        pcs cluster stop --force
-    else
-        pcs cluster stop
-    fi
-else
-    echo "Upgrading openstack-puppet-modules"
-    yum -q -y update openstack-puppet-modules
-    echo "Upgrading other packages is handled by config management tooling"
-    echo -n "true" > $heat_outputs_path.update_managed_packages
-    exit 0
-fi
-
 # Special-case OVS for https://bugs.launchpad.net/tripleo/+bug/1635205
 if [[ -n $(rpm -q --scripts openvswitch | awk '/postuninstall/,/*/' | grep "systemctl.*try-restart") ]]; then
     echo "Manual upgrade of openvswitch - restart in postun detected"
@@ -94,6 +76,24 @@ else
     echo "Skipping manual upgrade of openvswitch - no restart in postun detected"
 fi
 
+if [[ "$pacemaker_status" == "active" ]] ; then
+    echo "Pacemaker running, stopping cluster node and doing full package update"
+    node_count=$(pcs status xml | grep -o "<nodes_configured.*/>" | grep -o 'number="[0-9]*"' | grep -o "[0-9]*")
+    if [[ "$node_count" == "1" ]] ; then
+        echo "Active node count is 1, stopping node with --force"
+        pcs cluster stop --force
+    else
+        pcs cluster stop
+    fi
+else
+    echo "Upgrading openstack-puppet-modules and its dependencies"
+    yum -q -y update openstack-puppet-modules
+    yum deplist openstack-puppet-modules | awk '/dependency/{print $2}' | xargs yum -q -y update
+    echo "Upgrading other packages is handled by config management tooling"
+    echo -n "true" > $heat_outputs_path.update_managed_packages
+    exit 0
+fi
+
 command=${command:-update}
 full_command="yum -q -y $command $command_arguments"
 echo "Running: $full_command"
@@ -102,6 +102,17 @@ result=$($full_command)
 return_code=$?
 echo "$result"
 echo "yum return code: $return_code"
+
+# Writes any changes caused by alterations to os-net-config and bounces the
+# interfaces *before* restarting the cluster.
+os-net-config -c /etc/os-net-config/config.json -v --detailed-exit-codes
+RETVAL=$?
+if [[ $RETVAL == 2 ]]; then
+    echo "os-net-config: interface configuration files updated successfully"
+elif [[ $RETVAL != 0 ]]; then
+    echo "ERROR: os-net-config configuration failed"
+    exit $RETVAL
+fi
 
 if [[ "$pacemaker_status" == "active" ]] ; then
     echo "Starting cluster node"

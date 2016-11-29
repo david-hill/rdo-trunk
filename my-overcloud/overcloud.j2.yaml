@@ -121,7 +121,6 @@ parameters:
                  resource_registry) which represent nested stacks
                  for each service that should get installed on the {{role.name}} role.
     type: comma_delimited_list
-    default: {{role.ServicesDefault|default([])}}
 
   {{role.name}}Count:
     description: Number of {{role.name}} nodes to deploy
@@ -232,8 +231,19 @@ resources:
       config: {get_attr: [allNodesConfig, config_id]}
       servers: {get_attr: [{{role.name}}, attributes, nova_server_resource]}
       input_values:
-        bootstrap_nodeid: {get_attr: [{{role.name}}, resource.0.hostname]}
-        bootstrap_nodeid_ip: {get_attr: [{{role.name}}, resource.0.ip_address]}
+        # Note we have to use yaql to look up the first hostname/ip in the
+        # list because heat path based attributes operate on the attribute
+        # inside the ResourceGroup, not the exposed list ref discussion in
+        # https://bugs.launchpad.net/heat/+bug/1640488
+        # The coalesce is needed because $.data is None during heat validation
+        bootstrap_nodeid:
+          yaql:
+            expression: coalesce($.data, []).first(null)
+            data: {get_attr: [{{role.name}}, hostname]}
+        bootstrap_nodeid_ip:
+          yaql:
+            expression: coalesce($.data, []).first(null)
+            data: {get_attr: [{{role.name}}, ip_address]}
 
   {{role.name}}AllNodesValidationDeployment:
     type: OS::Heat::StructuredDeployments
@@ -300,7 +310,7 @@ resources:
               # - The outer one filters the map based on the services enabled for the role
               #   then merges the result into one map.
               - yaql:
-                  expression: let(root => $) -> $.data.map.items().where($[0] in $root.data.services).select($[1]).reduce($1.mergeWith($2), {})
+                  expression: let(root => $) -> $.data.map.items().where($[0] in coalesce($root.data.services, [])).select($[1]).reduce($1.mergeWith($2), {})
                   data:
                     map:
                       yaql:
@@ -532,8 +542,8 @@ resources:
   # Post deployment steps for all roles
   AllNodesDeploySteps:
     type: OS::TripleO::PostDeploySteps
-{% for role in roles %}
     depends_on:
+{% for role in roles %}
       - {{role.name}}AllNodesDeployment
 {% endfor %}
     properties:
@@ -556,60 +566,6 @@ outputs:
   KeystoneAdminVip:
     description: Keystone Admin VIP endpoint
     value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, KeystoneAdminApiNetwork]}]}
-  PublicVip:
-    description: Controller VIP for public API endpoints
-    value: {get_attr: [VipMap, net_ip_map, external]}
-  AodhInternalVip:
-    description: VIP for Aodh API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, AodhApiNetwork]}]}
-  BarbicanInternalVip:
-    description: VIP for Barbican API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, BarbicanApiNetwork]}]}
-  CeilometerInternalVip:
-    description: VIP for Ceilometer API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, CeilometerApiNetwork]}]}
-  CephRgwInternalVip:
-    description: VIP for Ceph RGW internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, CephRgwNetwork]}]}
-  CinderInternalVip:
-    description: VIP for Cinder API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, CinderApiNetwork]}]}
-  GlanceInternalVip:
-    description: VIP for Glance API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, GlanceApiNetwork]}]}
-  GnocchiInternalVip:
-    description: VIP for Gnocchi API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, GnocchiApiNetwork]}]}
-  MistralInternalVip:
-    description: VIP for Mistral API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, MistralApiNetwork]}]}
-  HeatInternalVip:
-    description: VIP for Heat API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, HeatApiNetwork]}]}
-  IronicInternalVip:
-    description: VIP for Ironic API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, IronicApiNetwork]}]}
-  KeystoneInternalVip:
-    description: VIP for Keystone API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, KeystonePublicApiNetwork]}]}
-  ManilaInternalVip:
-    description: VIP for Manila API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, ManilaApiNetwork]}]}
-  NeutronInternalVip:
-    description: VIP for Neutron API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, NeutronApiNetwork]}]}
-  NovaInternalVip:
-    description: VIP for Nova API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, NovaApiNetwork]}]}
-  OpenDaylightInternalVip:
-    description: VIP for OpenDaylight API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, OpenDaylightApiNetwork]}]}
-  SaharaInternalVip:
-    description: VIP for Sahara API internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, SaharaApiNetwork]}]}
-  SwiftInternalVip:
-    description: VIP for Swift Proxy internal endpoint
-    value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, SwiftProxyNetwork]}]}
   EndpointMap:
     description: |
       Mapping of the resources with the needed info for their endpoints.

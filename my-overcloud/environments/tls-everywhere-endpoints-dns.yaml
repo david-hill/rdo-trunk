@@ -5,6 +5,9 @@ parameter_defaults:
     AodhAdmin: {protocol: 'https', port: '8042', host: 'CLOUDNAME'}
     AodhInternal: {protocol: 'https', port: '8042', host: 'CLOUDNAME'}
     AodhPublic: {protocol: 'https', port: '13042', host: 'CLOUDNAME'}
+    BarbicanAdmin: {protocol: 'https', port: '9311', host: 'CLOUDNAME'}
+    BarbicanInternal: {protocol: 'https', port: '9311', host: 'CLOUDNAME'}
+    BarbicanPublic: {protocol: 'https', port: '13311', host: 'CLOUDNAME'}
     CeilometerAdmin: {protocol: 'https', port: '8777', host: 'CLOUDNAME'}
     CeilometerInternal: {protocol: 'https', port: '8777', host: 'CLOUDNAME'}
     CeilometerPublic: {protocol: 'https', port: '13777', host: 'CLOUDNAME'}
@@ -50,6 +53,9 @@ parameter_defaults:
     NovaVNCProxyAdmin: {protocol: 'https', port: '6080', host: 'CLOUDNAME'}
     NovaVNCProxyInternal: {protocol: 'https', port: '6080', host: 'CLOUDNAME'}
     NovaVNCProxyPublic: {protocol: 'https', port: '13080', host: 'CLOUDNAME'}
+    PankoAdmin: {protocol: 'https', port: '8779', host: 'CLOUDNAME'}
+    PankoInternal: {protocol: 'https', port: '8779', host: 'CLOUDNAME'}
+    PankoPublic: {protocol: 'https', port: '13779', host: 'CLOUDNAME'}
     SaharaAdmin: {protocol: 'https', port: '8386', host: 'CLOUDNAME'}
     SaharaInternal: {protocol: 'https', port: '8386', host: 'CLOUDNAME'}
     SaharaPublic: {protocol: 'https', port: '13386', host: 'CLOUDNAME'}

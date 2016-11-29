@@ -11,6 +11,7 @@ resource_registry:
   OS::TripleO::Tasks::PackageUpdate: extraconfig/tasks/yum_update.yaml
 
 {% for role in roles %}
+  OS::TripleO::{{role.name}}PostDeploySteps: puppet/post.yaml
   OS::TripleO::{{role.name}}: puppet/{{role.name.lower()}}-role.yaml
   OS::TripleO::{{role.name}}Config: puppet/{{role.name.lower()}}-config.yaml
   OS::TripleO::Tasks::{{role.name}}PreConfig: OS::Heat::None
@@ -56,6 +57,9 @@ resource_registry:
   OS::TripleO::NodeTLSData: OS::Heat::None
   OS::TripleO::NodeExtraConfig: puppet/extraconfig/pre_deploy/default.yaml
   OS::TripleO::NodeExtraConfigPost: extraconfig/post_deploy/default.yaml
+
+  OS::TripleO::Tasks::ControllerPrePuppet: OS::Heat::None
+  OS::TripleO::Tasks::ControllerPostPuppet: OS::Heat::None
 
   # "AllNodes" Extra cluster config, runs on all nodes prior to the post_deploy
   # phase, e.g when puppet is applied, but after the pre_deploy phase.  Useful when
@@ -181,12 +185,12 @@ resource_registry:
   # Services that are disabled by default (use relevant environment files):
   OS::TripleO::Services::FluentdClient: OS::Heat::None
   OS::TripleO::LoggingConfiguration: puppet/services/logging/fluentd-config.yaml
-  OS::Tripleo::Services::ManilaApi: OS::Heat::None
-  OS::Tripleo::Services::ManilaScheduler: OS::Heat::None
-  OS::Tripleo::Services::ManilaShare: OS::Heat::None
-  OS::Tripleo::Services::ManilaBackendGeneric: OS::Heat::None
-  OS::Tripleo::Services::ManilaBackendNetapp: OS::Heat::None
-  OS::Tripleo::Services::ManilaBackendCephFs: OS::Heat::None
+  OS::TripleO::Services::ManilaApi: OS::Heat::None
+  OS::TripleO::Services::ManilaScheduler: OS::Heat::None
+  OS::TripleO::Services::ManilaShare: OS::Heat::None
+  OS::TripleO::Services::ManilaBackendGeneric: OS::Heat::None
+  OS::TripleO::Services::ManilaBackendNetapp: OS::Heat::None
+  OS::TripleO::Services::ManilaBackendCephFs: OS::Heat::None
   OS::TripleO::Services::ComputeNeutronL3Agent: OS::Heat::None
   OS::TripleO::Services::ComputeNeutronMetadataAgent: OS::Heat::None
   OS::TripleO::Services::BarbicanApi: OS::Heat::None
@@ -194,6 +198,7 @@ resource_registry:
   OS::TripleO::Services::AodhEvaluator: puppet/services/aodh-evaluator.yaml
   OS::TripleO::Services::AodhNotifier: puppet/services/aodh-notifier.yaml
   OS::TripleO::Services::AodhListener: puppet/services/aodh-listener.yaml
+  OS::TripleO::Services::PankoApi: OS::Heat::None
   OS::TripleO::Services::MistralEngine: OS::Heat::None
   OS::TripleO::Services::MistralApi: OS::Heat::None
   OS::TripleO::Services::MistralExecutor: OS::Heat::None
@@ -214,3 +219,8 @@ resource_registry:
 parameter_defaults:
   EnablePackageInstall: false
   SoftwareConfigTransport: POLL_TEMP_URL
+
+{% for role in roles %}
+  # Parameters generated for {{role.name}} Role
+  {{role.name}}Services: {{role.ServicesDefault|default([])}}
+{% endfor %}
