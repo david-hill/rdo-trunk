@@ -94,9 +94,9 @@
     - OS::TripleO::Services::OpenDaylightOvs
     - OS::TripleO::Services::SensuClient
     - OS::TripleO::Services::FluentdClient
-    - OS::TripleO::Services::VipHosts
     - OS::TripleO::Services::BarbicanApi
     - OS::TripleO::Services::PankoApi
+    - OS::TripleO::Services::Zaqar
 
 - name: Compute
   CountDefault: 1
@@ -122,7 +122,6 @@
     - OS::TripleO::Services::OpenDaylightOvs
     - OS::TripleO::Services::SensuClient
     - OS::TripleO::Services::FluentdClient
-    - OS::TripleO::Services::VipHosts
 
 - name: BlockStorage
   ServicesDefault:
@@ -136,7 +135,6 @@
     - OS::TripleO::Services::TripleoFirewall
     - OS::TripleO::Services::SensuClient
     - OS::TripleO::Services::FluentdClient
-    - OS::TripleO::Services::VipHosts
 
 - name: ObjectStorage
   ServicesDefault:
@@ -151,7 +149,6 @@
     - OS::TripleO::Services::TripleoFirewall
     - OS::TripleO::Services::SensuClient
     - OS::TripleO::Services::FluentdClient
-    - OS::TripleO::Services::VipHosts
 
 - name: CephStorage
   ServicesDefault:
@@ -165,4 +162,3 @@
     - OS::TripleO::Services::TripleoFirewall
     - OS::TripleO::Services::SensuClient
     - OS::TripleO::Services::FluentdClient
-    - OS::TripleO::Services::VipHosts

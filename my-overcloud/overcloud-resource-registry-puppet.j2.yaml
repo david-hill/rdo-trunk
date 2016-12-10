@@ -100,6 +100,10 @@ resource_registry:
   # validation resources
   OS::TripleO::AllNodes::Validation: all-nodes-validation.yaml
 
+  # Upgrade resources
+  OS::TripleO::UpgradeConfig: puppet/upgrade_config.yaml
+  OS::TripleO::UpgradeSteps: OS::Heat::None
+
   # services
   OS::TripleO::Services: puppet/services/services.yaml
   OS::TripleO::Services::Apache: puppet/services/apache.yaml
@@ -125,6 +129,7 @@ resource_registry:
   OS::TripleO::Services::HeatEngine: puppet/services/heat-engine.yaml
   OS::TripleO::Services::Kernel: puppet/services/kernel.yaml
   OS::TripleO::Services::MySQL: puppet/services/database/mysql.yaml
+  OS::TripleO::Services::MySQLTLS: OS::Heat::None
   OS::TripleO::Services::NeutronDhcpAgent: puppet/services/neutron-dhcp.yaml
   OS::TripleO::Services::NeutronL3Agent: puppet/services/neutron-l3.yaml
   OS::TripleO::Services::NeutronMetadataAgent: puppet/services/neutron-metadata.yaml
@@ -181,7 +186,6 @@ resource_registry:
   OS::TripleO::Services::GnocchiApi: puppet/services/gnocchi-api.yaml
   OS::TripleO::Services::GnocchiMetricd: puppet/services/gnocchi-metricd.yaml
   OS::TripleO::Services::GnocchiStatsd: puppet/services/gnocchi-statsd.yaml
-  OS::TripleO::Services::VipHosts: puppet/services/vip-hosts.yaml
   # Services that are disabled by default (use relevant environment files):
   OS::TripleO::Services::FluentdClient: OS::Heat::None
   OS::TripleO::LoggingConfiguration: puppet/services/logging/fluentd-config.yaml
@@ -215,6 +219,7 @@ resource_registry:
   OS::TripleO::Services::ContrailControl: puppet/services/network/contrail-control.yaml
   OS::TripleO::Services::ContrailDatabase: puppet/services/network/contrail-database.yaml
   OS::TripleO::Services::ContrailWebui: puppet/services/network/contrail-webui.yaml
+  OS::TripleO::Services::Zaqar: OS::Heat::None
 
 parameter_defaults:
   EnablePackageInstall: false
