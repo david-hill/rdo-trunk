@@ -24,10 +24,10 @@ parameter_defaults:
   TenantNetworkVlanID: 204
   ExternalNetworkVlanID: 100
   DnsServers: ["8.8.8.8","8.8.4.4"]
-  EC2MetadataIp: 192.0.2.1
+  EC2MetadataIp: 192.168.24.1
   # Set to the router gateway on the external network
   ExternalInterfaceDefaultRoute: 192.168.122.1
-  ControlPlaneDefaultRoute: 192.0.2.1
+  ControlPlaneDefaultRoute: 192.168.24.1
   DnsServers: [ "8.8.8.8" ]
   # Customize bonding options if required (will be ignored if bonds are not used)
   BondInterfaceOvsOptions:
