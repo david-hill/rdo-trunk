@@ -34,3 +34,5 @@ parameter_defaults:
       "bond_mode=balance-tcp lacp=active other-config:lacp-fallback-ab=true"
   NovaComputeExtraConfig:
     nova::compute::reserved_host_memory: 512
+  NeutronNetworkTypea: "vxlan"
+  NeutronTunnelTypes: "vxlan"
