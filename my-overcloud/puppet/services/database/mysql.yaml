@@ -1,4 +1,4 @@
-heat_template_version: 2016-10-14
+heat_template_version: ocata
 
 description: >
   MySQL service deployment using puppet
@@ -90,9 +90,14 @@ outputs:
                   "%{hiera('fqdn_$NETWORK')}"
                 params:
                   $NETWORK: {get_param: [ServiceNetMap, MysqlNetwork]}
+            tripleo::profile::base::database::mysql::client_bind_address:
+              {get_param: [ServiceNetMap, MysqlNetwork]}
       step_config: |
         include ::tripleo::profile::base::database::mysql
       upgrade_tasks:
+        - name: Check for galera root password
+          tags: step0
+          file: path=/root/.my.cnf state=file
         - name: Stop service
           tags: step2
           service: name=mariadb state=stopped

@@ -1,4 +1,4 @@
-heat_template_version: 2016-04-08
+heat_template_version: ocata
 
 description: >
   Gnocchi service configured with Puppet
@@ -102,6 +102,7 @@ outputs:
             # internal_api_uri -> [IP]
             # internal_api_subnet - > IP/CIDR
             gnocchi::wsgi::apache::bind_host: {get_param: [ServiceNetMap, GnocchiApiNetwork]}
+            gnocchi::wsgi::apache::wsgi_process_display_name: 'gnocchi_wsgi'
             gnocchi::api::host:
               str_replace:
                 template:

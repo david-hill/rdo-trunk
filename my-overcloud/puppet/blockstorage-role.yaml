@@ -1,4 +1,4 @@
-heat_template_version: 2016-10-14
+heat_template_version: ocata
 description: 'OpenStack cinder storage configured by Puppet'
 parameters:
   BlockStorageImage:
@@ -71,11 +71,20 @@ parameters:
     description: >
       The DNS domain used for the hosts. This should match the dhcp_domain
       configured in the Undercloud neutron. Defaults to localdomain.
+  BlockStorageServerMetadata:
+    default: {}
+    description: >
+      Extra properties or metadata passed to Nova for the created nodes in
+      the overcloud. It's accessible via the Nova metadata API. This option is
+      role-specific and is merged with the values given to the ServerMetadata
+      parameter.
+    type: json
   ServerMetadata:
     default: {}
     description: >
       Extra properties or metadata passed to Nova for the created nodes in
-      the overcloud. It's accessible via the Nova metadata API.
+      the overcloud. It's accessible via the Nova metadata API. This applies to
+      all roles and is merged with a role-specific metadata parameter.
     type: json
   BlockStorageSchedulerHints:
     type: json
@@ -93,10 +102,19 @@ parameters:
   MonitoringSubscriptions:
     type: comma_delimited_list
     default: []
+  ServiceMetadataSettings:
+    type: json
+    default: {}
   ConfigCommand:
     type: string
     description: Command which will be run whenever configuration data changes
     default: os-refresh-config --timeout 14400
+  UpgradeInitCommand:
+    type: string
+    description: |
+      Command or script snippet to run on all overcloud nodes to
+      initialize the upgrade process. E.g. a repository switch.
+    default: ''
 
 resources:
   BlockStorage:
@@ -118,7 +136,11 @@ resources:
             template: {get_param: Hostname}
             params: {get_param: HostnameMap}
       software_config_transport: {get_param: SoftwareConfigTransport}
-      metadata: {get_param: ServerMetadata}
+      metadata:
+        map_merge:
+          - {get_param: ServerMetadata}
+          - {get_param: BlockStorageServerMetadata}
+          - {get_param: ServiceMetadataSettings}
       scheduler_hints: {get_param: BlockStorageSchedulerHints}
 
   # Combine the NodeAdminUserData and NodeUserData mime archives
@@ -130,6 +152,8 @@ resources:
         type: multipart
       - config: {get_resource: NodeUserData}
         type: multipart
+      - config: {get_resource: RoleUserData}
+        type: multipart
 
   # Creates the "heat-admin" user if configured via the environment
   # Should return a OS::Heat::MultipartMime reference via OS::stack_id
@@ -140,6 +164,11 @@ resources:
   # Should return a OS::Heat::MultipartMime reference via OS::stack_id
   NodeUserData:
     type: OS::TripleO::NodeUserData
+
+  # For optional operator role-specific userdata
+  # Should return a OS::Heat::MultipartMime reference via OS::stack_id
+  RoleUserData:
+    type: OS::TripleO::BlockStorage::NodeUserData
 
   ExternalPort:
     type: OS::TripleO::BlockStorage::Ports::ExternalPort
@@ -307,17 +336,44 @@ resources:
             - - {get_attr: [BlockStorage, name]}
               - ctlplane
 
+  PreNetworkConfig:
+    type: OS::TripleO::BlockStorage::PreNetworkConfig
+    properties:
+      server: {get_resource: BlockStorage}
+
   NetworkDeployment:
     type: OS::TripleO::SoftwareDeployment
+    depends_on: PreNetworkConfig
     properties:
       name: NetworkDeployment
       config: {get_resource: NetworkConfig}
       server: {get_resource: BlockStorage}
       actions: {get_param: NetworkDeploymentActions}
 
+  BlockStorageUpgradeInitConfig:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      config:
+        list_join:
+        - ''
+        - - "#!/bin/bash\n\n"
+          - "if [[ -f /etc/resolv.conf.save ]] ; then rm /etc/resolv.conf.save; fi\n\n"
+          - get_param: UpgradeInitCommand
+
+  # Note we may be able to make this conditional on UpgradeInitCommandNotEmpty
+  # but https://bugs.launchpad.net/heat/+bug/1649900 needs fixing first
+  BlockStorageUpgradeInitDeployment:
+    type: OS::Heat::SoftwareDeployment
+    depends_on: NetworkDeployment
+    properties:
+      name: BlockStorageUpgradeInitDeployment
+      server: {get_resource: BlockStorage}
+      config: {get_resource: BlockStorageUpgradeInitConfig}
+
   BlockStorageDeployment:
     type: OS::Heat::StructuredDeployment
-    depends_on: NetworkDeployment
+    depends_on: BlockStorageUpgradeInitDeployment
     properties:
       name: BlockStorageDeployment
       server: {get_resource: BlockStorage}

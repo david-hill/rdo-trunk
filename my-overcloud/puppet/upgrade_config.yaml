@@ -1,4 +1,4 @@
-heat_template_version: 2016-10-14
+heat_template_version: ocata
 description: 'Upgrade for via ansible by applying a step related tag'
 
 parameters:
@@ -35,6 +35,7 @@ resources:
             template: "stepSTEP"
             params:
               STEP: {get_param: step}
+        modulepath: /usr/share/ansible-modules
       inputs:
       - name: role
       config: {get_attr: [AnsibleConfig, value]}

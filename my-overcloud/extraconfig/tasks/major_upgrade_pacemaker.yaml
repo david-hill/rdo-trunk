@@ -1,4 +1,4 @@
-heat_template_version: 2016-10-14
+heat_template_version: ocata
 description: 'Upgrade for Pacemaker deployments'
 
 parameters:
@@ -97,7 +97,11 @@ resources:
     depends_on: ControllerPacemakerUpgradeDeployment_Step1
     properties:
       group: script
-      config: {get_file: major_upgrade_block_storage.sh}
+      config:
+        list_join:
+        - ''
+        - - get_file: pacemaker_common_functions.sh
+          - get_file: major_upgrade_block_storage.sh
 
   BlockStorageUpgradeDeployment:
     type: OS::Heat::SoftwareDeploymentGroup

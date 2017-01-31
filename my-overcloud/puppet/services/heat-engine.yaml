@@ -1,4 +1,4 @@
-heat_template_version: 2016-10-14
+heat_template_version: ocata
 
 description: >
   Openstack Heat Engine service configured with Puppet
@@ -48,6 +48,15 @@ parameters:
     default:
       tag: openstack.heat.engine
       path: /var/log/heat/heat-engine.log
+  HeatConvergenceEngine:
+    type: boolean
+    default: true
+    description: Enables the heat engine with the convergence architecture.
+  HeatMaxResourcesPerStack:
+    type: number
+    default: 1000
+    description: Maximum resources allowed per top-level stack. -1 stands for unlimited.
+
 
 resources:
   HeatBase:
@@ -72,6 +81,26 @@ outputs:
           - heat::engine::num_engine_workers: {get_param: HeatWorkers}
             heat::engine::configure_delegated_roles: false
             heat::engine::trusts_delegated_roles: []
+            heat::engine::max_nested_stack_depth: 6
+            heat::engine::max_resources_per_stack: {get_param: HeatMaxResourcesPerStack}
+            heat::engine::heat_metadata_server_url:
+              list_join:
+                - ''
+                - - {get_param: [EndpointMap, HeatCfnPublic, protocol]}
+                  - '://'
+                  - {get_param: [EndpointMap, HeatCfnPublic, host]}
+                  - ':'
+                  - {get_param: [EndpointMap, HeatCfnPublic, port]}
+            heat::engine::heat_waitcondition_server_url:
+              list_join:
+                - ''
+                - - {get_param: [EndpointMap, HeatCfnPublic, protocol]}
+                  - '://'
+                  - {get_param: [EndpointMap, HeatCfnPublic, host]}
+                  - ':'
+                  - {get_param: [EndpointMap, HeatCfnPublic, port]}
+                  - '/v1/waitcondition'
+            heat::engine::convergence_engine: {get_param: HeatConvergenceEngine}
             tripleo::profile::base::heat::manage_db_purge: {get_param: HeatEnableDBPurge}
             heat::database_connection:
               list_join:
@@ -82,6 +111,8 @@ outputs:
                   - '@'
                   - {get_param: [EndpointMap, MysqlInternal, host]}
                   - '/heat'
+                  - '?bind_address='
+                  - "%{hiera('tripleo::profile::base::database::mysql::client_bind_address')}"
             heat::keystone_ec2_uri: {get_param: [EndpointMap, KeystoneEC2, uri]}
             heat::keystone::domain::domain_password: {get_param: HeatStackDomainAdminPassword}
             heat::engine::auth_encryption_key:
@@ -106,3 +137,13 @@ outputs:
         keystone:
             # This is needed because the keystone profile handles creating the domain
             tripleo::profile::base::keystone::heat_admin_password: {get_param: HeatStackDomainAdminPassword}
+      upgrade_tasks:
+        - name: Stop heat_engine service
+          tags: step2
+          service: name=openstack-heat-engine state=stopped
+        - name: Sync heat_engine DB
+          tags: step5
+          command: heat-manage --config-file /etc/heat/heat.conf db_sync
+        - name: Start heat_engine service
+          tags: step6
+          service: name=openstack-heat-engine state=started

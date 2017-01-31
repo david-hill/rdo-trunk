@@ -1,4 +1,4 @@
-heat_template_version: 2016-10-14
+heat_template_version: ocata
 
 description: >
   OpenStack Neutron L3 agent configured with Puppet
@@ -68,15 +68,21 @@ outputs:
       config_settings:
         map_merge:
         - get_attr: [NeutronBase, role_data, config_settings]
-        - neutron::agents::l3::router_delete_namespaces: True
-          neutron::agents::l3::agent_mode: {get_param: NeutronL3AgentMode}
+        - neutron::agents::l3::agent_mode: {get_param: NeutronL3AgentMode}
           tripleo.neutron_l3.firewall_rules:
             '106 neutron_l3 vrrp':
               proto: vrrp
-        - 
+        -
           if:
           - external_network_bridge_empty
           - {}
           - neutron::agents::l3::external_network_bridge: {get_param: NeutronExternalNetworkBridge}
       step_config: |
         include tripleo::profile::base::neutron::l3
+      upgrade_tasks:
+        - name: Stop neutron_l3 service
+          tags: step2
+          service: name=neutron-l3-agent state=stopped
+        - name: Start neutron_l3 service
+          tags: step6
+          service: name=neutron-l3-agent state=started

@@ -1,4 +1,4 @@
-heat_template_version: 2016-10-14
+heat_template_version: ocata
 description: 'All Nodes Config for Puppet'
 
 parameters:
@@ -27,6 +27,8 @@ parameters:
   service_node_names:
     type: json
   short_service_node_names:
+    type: json
+  short_service_bootstrap_node:
     type: json
   controller_names:
     type: comma_delimited_list
@@ -125,6 +127,7 @@ resources:
               - {get_param: service_ips}
               - {get_param: service_node_names}
               - {get_param: short_service_node_names}
+              - {get_param: short_service_bootstrap_node}
               - controller_node_ips:
                   list_join:
                   - ','

@@ -1,4 +1,4 @@
-heat_template_version: 2016-10-14
+heat_template_version: ocata
 
 description: >
   Mapping of service_name_network -> network name
@@ -58,7 +58,9 @@ parameters:
       CephRgwNetwork: storage
       PublicNetwork: external
       OpendaylightApiNetwork: internal_api
+      OvnDbsNetwork: internal_api
       MistralApiNetwork: internal_api
+      ZaqarApiNetwork: internal_api
       # We special-case the default ResolveNetwork for the CephStorage role
       # for backwards compatibility, all other roles default to internal_api
       CephStorageHostnameResolveNetwork: storage

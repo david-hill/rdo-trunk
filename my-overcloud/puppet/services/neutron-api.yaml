@@ -1,4 +1,4 @@
-heat_template_version: 2016-10-14
+heat_template_version: ocata
 
 description: >
   OpenStack Neutron Server configured with Puppet
@@ -112,6 +112,8 @@ outputs:
                   - '@'
                   - {get_param: [EndpointMap, MysqlInternal, host]}
                   - '/ovs_neutron'
+                  - '?bind_address='
+                  - "%{hiera('tripleo::profile::base::database::mysql::client_bind_address')}"
             neutron::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri] }
             neutron::keystone::authtoken::auth_url: {get_param: [EndpointMap, KeystoneAdmin, uri_no_suffix]}
             neutron::server::api_workers: {get_param: NeutronWorkers}
@@ -158,3 +160,14 @@ outputs:
           neutron::db::mysql::allowed_hosts:
             - '%'
             - "%{hiera('mysql_bind_host')}"
+      upgrade_tasks:
+        - name: Stop neutron_api service
+          tags: step2
+          service: name=neutron-server state=stopped
+        - name: Sync neutron_api DB
+          tags: step5
+          command: neutron-db-manage --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugin.ini upgrade head
+        - name: Start neutron_api service
+          tags: step6
+          service: name=neutron-server state=started
+

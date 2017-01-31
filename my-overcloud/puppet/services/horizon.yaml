@@ -1,4 +1,4 @@
-heat_template_version: 2016-10-14
+heat_template_version: ocata
 
 description: >
   Horizon service configured with Puppet
@@ -58,8 +58,10 @@ outputs:
               dport:
                 - 80
                 - 443
+          horizon::enable_secure_proxy_ssl_header: true
           horizon::disable_password_reveal: true
           horizon::enforce_password_check: true
+          horizon::disallow_iframe_embed: true
           horizon::cache_backend: django.core.cache.backends.memcached.MemcachedCache
           horizon::django_session_engine: 'django.contrib.sessions.backends.cache'
           horizon::vhost_extra_params:

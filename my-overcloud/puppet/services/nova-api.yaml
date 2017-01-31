@@ -1,4 +1,4 @@
-heat_template_version: 2016-10-14
+heat_template_version: ocata
 
 description: >
   OpenStack Nova API service configured with Puppet
@@ -112,14 +112,14 @@ outputs:
               params:
                 $NETWORK: {get_param: [ServiceNetMap, NovaApiNetwork]}
           nova::api::service_name: 'httpd'
-          nova::wsgi::apache::ssl: {get_param: EnableInternalTLS}
+          nova::wsgi::apache_api::ssl: {get_param: EnableInternalTLS}
           # NOTE: bind IP is found in Heat replacing the network name with the local node IP
           # for the given network; replacement examples (eg. for internal_api):
           # internal_api -> IP
           # internal_api_uri -> [IP]
           # internal_api_subnet - > IP/CIDR
-          nova::wsgi::apache::bind_host: {get_param: [ServiceNetMap, NovaApiNetwork]}
-          nova::wsgi::apache::servername:
+          nova::wsgi::apache_api::bind_host: {get_param: [ServiceNetMap, NovaApiNetwork]}
+          nova::wsgi::apache_api::servername:
             str_replace:
               template:
                 "%{hiera('fqdn_$NETWORK')}"
@@ -133,10 +133,27 @@ outputs:
           - nova_workers_zero
           - {}
           - nova::api::osapi_compute_workers: {get_param: NovaWorkers}
-            nova::wsgi::apache::workers: {get_param: NovaWorkers}
+            nova::wsgi::apache_api::workers: {get_param: NovaWorkers}
       step_config: |
         include tripleo::profile::base::nova::api
       service_config_settings:
+        mysql:
+          map_merge:
+          - {get_attr: [NovaBase, role_data, service_config_settings, mysql]}
+          - nova::db::mysql::password: {get_param: NovaPassword}
+            nova::db::mysql::user: nova
+            nova::db::mysql::host: {get_param: [EndpointMap, MysqlInternal, host_nobrackets]}
+            nova::db::mysql::dbname: nova
+            nova::db::mysql::allowed_hosts:
+              - '%'
+              - "%{hiera('mysql_bind_host')}"
+            nova::db::mysql_api::password: {get_param: NovaPassword}
+            nova::db::mysql_api::user: nova_api
+            nova::db::mysql_api::host: {get_param: [EndpointMap, MysqlInternal, host_nobrackets]}
+            nova::db::mysql_api::dbname: nova_api
+            nova::db::mysql_api::allowed_hosts:
+              - '%'
+              - "%{hiera('mysql_bind_host')}"
         keystone:
           nova::keystone::auth::tenant: 'service'
           nova::keystone::auth::public_url: {get_param: [EndpointMap, NovaPublic, uri]}
@@ -144,18 +161,3 @@ outputs:
           nova::keystone::auth::admin_url: {get_param: [EndpointMap, NovaAdmin, uri]}
           nova::keystone::auth::password: {get_param: NovaPassword}
           nova::keystone::auth::region: {get_param: KeystoneRegion}
-        mysql:
-          nova::db::mysql::password: {get_param: NovaPassword}
-          nova::db::mysql::user: nova
-          nova::db::mysql::host: {get_param: [EndpointMap, MysqlInternal, host_nobrackets]}
-          nova::db::mysql::dbname: nova
-          nova::db::mysql::allowed_hosts:
-            - '%'
-            - "%{hiera('mysql_bind_host')}"
-          nova::db::mysql_api::password: {get_param: NovaPassword}
-          nova::db::mysql_api::user: nova_api
-          nova::db::mysql_api::host: {get_param: [EndpointMap, MysqlInternal, host_nobrackets]}
-          nova::db::mysql_api::dbname: nova_api
-          nova::db::mysql_api::allowed_hosts:
-            - '%'
-            - "%{hiera('mysql_bind_host')}"

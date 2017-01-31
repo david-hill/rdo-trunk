@@ -11,6 +11,7 @@ resource_registry:
   OS::TripleO::Tasks::PackageUpdate: extraconfig/tasks/yum_update.yaml
 
 {% for role in roles %}
+  OS::TripleO::{{role.name}}::PreNetworkConfig: OS::Heat::None
   OS::TripleO::{{role.name}}PostDeploySteps: puppet/post.yaml
   OS::TripleO::{{role.name}}: puppet/{{role.name.lower()}}-role.yaml
   OS::TripleO::{{role.name}}Config: puppet/{{role.name.lower()}}-config.yaml
@@ -41,6 +42,8 @@ resource_registry:
   # in the jinja loop
   OS::TripleO::Controller::Net::SoftwareConfig: net-config-bridge.yaml
 
+  OS::TripleO::ServiceServerMetadataHook: OS::Heat::None
+
   OS::TripleO::Server: OS::Nova::Server
 
   # This creates the "heat-admin" user for all OS images by default
@@ -49,10 +52,14 @@ resource_registry:
 
   # Hooks for operator extra config
   # NodeUserData == Cloud-init additional user-data, e.g cloud-config
+  # role::NodeUserData == Role specific cloud-init additional user-data
   # ControllerExtraConfigPre == Controller configuration pre service deployment
   # NodeExtraConfig == All nodes configuration pre service deployment
   # NodeExtraConfigPost == All nodes configuration post service deployment
   OS::TripleO::NodeUserData: firstboot/userdata_default.yaml
+{% for role in roles %}
+  OS::TripleO::{{role.name}}::NodeUserData: firstboot/userdata_default.yaml
+{% endfor %}
   OS::TripleO::NodeTLSCAData: OS::Heat::None
   OS::TripleO::NodeTLSData: OS::Heat::None
   OS::TripleO::NodeExtraConfig: puppet/extraconfig/pre_deploy/default.yaml
@@ -90,6 +97,7 @@ resource_registry:
   OS::TripleO::Network::Ports::StorageVipPort: network/ports/noop.yaml
   OS::TripleO::Network::Ports::StorageMgmtVipPort: network/ports/noop.yaml
   OS::TripleO::Network::Ports::RedisVipPort: network/ports/ctlplane_vip.yaml
+  OS::TripleO::Network::Ports::ControlPlaneVipPort: OS::Neutron::Port
 
   # Service to network Mappings
   OS::TripleO::ServiceNetMap: network/service_net_map.yaml
@@ -109,6 +117,7 @@ resource_registry:
   OS::TripleO::Services::Apache: puppet/services/apache.yaml
   OS::TripleO::Services::ApacheTLS: OS::Heat::None
   OS::TripleO::Services::CACerts: puppet/services/ca-certs.yaml
+  OS::TripleO::Services::CephMds: OS::Heat::None
   OS::TripleO::Services::CephMon: OS::Heat::None
   OS::TripleO::Services::CephRgw: OS::Heat::None
   OS::TripleO::Services::CephOSD: OS::Heat::None
@@ -119,7 +128,6 @@ resource_registry:
   OS::TripleO::Services::CinderScheduler: puppet/services/cinder-scheduler.yaml
   OS::TripleO::Services::CinderVolume: puppet/services/cinder-volume.yaml
   OS::TripleO::Services::BlockStorageCinderVolume: puppet/services/cinder-volume.yaml
-  OS::TripleO::Services::Core: OS::Heat::None
   OS::TripleO::Services::Keystone: puppet/services/keystone.yaml
   OS::TripleO::Services::GlanceApi: puppet/services/glance-api.yaml
   OS::TripleO::Services::GlanceRegistry: puppet/services/glance-registry.yaml
@@ -146,6 +154,8 @@ resource_registry:
   OS::TripleO::Services::NeutronCorePluginPlumgrid: puppet/services/neutron-plugin-plumgrid.yaml
   OS::TripleO::Services::NeutronCorePluginNuage: puppet/services/neutron-plugin-nuage.yaml
   OS::TripleO::Services::NeutronCorePluginOpencontrail: puppet/services/neutron-plugin-opencontrail.yaml
+  OS::TripleO::Services::OVNDBs: OS::Heat::None
+
   OS::TripleO::Services::NeutronCorePluginMidonet: puppet/services/neutron-midonet.yaml
   OS::TripleO::Services::NeutronOvsAgent: puppet/services/neutron-ovs-agent.yaml
   OS::TripleO::Services::ComputeNeutronOvsAgent: puppet/services/neutron-ovs-agent.yaml
@@ -220,6 +230,8 @@ resource_registry:
   OS::TripleO::Services::ContrailDatabase: puppet/services/network/contrail-database.yaml
   OS::TripleO::Services::ContrailWebui: puppet/services/network/contrail-webui.yaml
   OS::TripleO::Services::Zaqar: OS::Heat::None
+  OS::TripleO::Services::NeutronML2FujitsuCfab: OS::Heat::None
+  OS::TripleO::Services::CinderHPELeftHandISCSI: OS::Heat::None
 
 parameter_defaults:
   EnablePackageInstall: false

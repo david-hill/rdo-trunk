@@ -1,4 +1,4 @@
-heat_template_version: 2016-04-08
+heat_template_version: ocata
 
 description: >
   OpenStack Barbican API service configured with Puppet
@@ -105,6 +105,8 @@ outputs:
                   - '@'
                   - {get_param: [EndpointMap, MysqlInternal, host]}
                   - '/barbican'
+                  - '?bind_address='
+                  - "%{hiera('tripleo::profile::base::database::mysql::client_bind_address')}"
             tripleo.barbican_api.firewall_rules:
               '117 barbican':
                 dport:

@@ -1,4 +1,4 @@
-heat_template_version: 2016-10-14
+heat_template_version: ocata
 
 description: >
   OpenStack Nova base service. Shared for all Nova services.
@@ -90,6 +90,8 @@ outputs:
                 - '@'
                 - {get_param: [EndpointMap, MysqlInternal, host]}
                 - '/nova'
+                - '?bind_address='
+                - "%{hiera('tripleo::profile::base::database::mysql::client_bind_address')}"
           nova::api_database_connection:
             list_join:
               - ''
@@ -99,6 +101,8 @@ outputs:
                 - '@'
                 - {get_param: [EndpointMap, MysqlInternal, host]}
                 - '/nova_api'
+                - '?bind_address='
+                - "%{hiera('tripleo::profile::base::database::mysql::client_bind_address')}"
           nova::debug: {get_param: Debug}
           nova::purge_config: {get_param: EnableConfigPurge}
           nova::network::neutron::neutron_project_name: 'service'
@@ -123,3 +127,9 @@ outputs:
           - compute_upgrade_level_empty
           - {}
           - nova::upgrade_level_compute: {get_param: UpgradeLevelNovaCompute}
+      service_config_settings:
+        mysql:
+          nova::rabbit_password: {get_param: RabbitPassword}
+          nova::rabbit_userid: {get_param: RabbitUserName}
+          nova::rabbit_use_ssl: {get_param: RabbitClientUseSSL}
+          nova::rabbit_port: {get_param: RabbitClientPort}

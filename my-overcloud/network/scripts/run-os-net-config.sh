@@ -1,7 +1,7 @@
 #!/bin/bash
-# Note this script expects the following environment variables to be set
-# normally these are provided by the calling SoftwareConfig resource, but
-# they may also be set manually for testing
+# The following environment variables may be set to substitute in a
+# custom bridge or interface name.  Normally these are provided by the calling
+# SoftwareConfig resource, but they may also be set manually for testing.
 # $bridge_name : The bridge device name to apply
 # $interface_name : The interface name to apply
 #
@@ -108,16 +108,24 @@ EOF_CAT
 }
 
 if [ -n '$network_config' ]; then
-    trap configure_safe_defaults EXIT
+    if [ -z "${disable_configure_safe_defaults:-''}" ]; then
+        trap configure_safe_defaults EXIT
+    fi
 
     mkdir -p /etc/os-net-config
     # Note these variables come from the calling heat SoftwareConfig
     echo '$network_config' > /etc/os-net-config/config.json
-    sed -i "s/bridge_name/$bridge_name/" /etc/os-net-config/config.json
-    sed -i "s/interface_name/$interface_name/" /etc/os-net-config/config.json
+
+    if [ "$(type -t network_config_hook)" = "function" ]; then
+        network_config_hook
+    fi
+
+    sed -i "s/bridge_name/${bridge_name:-''}/" /etc/os-net-config/config.json
+    sed -i "s/interface_name/${interface_name:-''}/" /etc/os-net-config/config.json
 
     os-net-config -c /etc/os-net-config/config.json -v --detailed-exit-codes
     RETVAL=$?
+
     if [[ $RETVAL == 2 ]]; then
         ping_metadata_ip
 

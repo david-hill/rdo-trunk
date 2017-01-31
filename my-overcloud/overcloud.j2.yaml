@@ -1,4 +1,5 @@
-heat_template_version: 2016-10-14
+{% set primary_role_name = roles[0].name -%}
+heat_template_version: ocata
 
 description: >
   Deploy an OpenStack environment, consisting of several node types (roles),
@@ -363,6 +364,7 @@ resources:
                     services: {get_attr: [{{role.name}}ServiceChain, role_data, service_names]}
           ServiceNames: {get_attr: [{{role.name}}ServiceChain, role_data, service_names]}
           MonitoringSubscriptions: {get_attr: [{{role.name}}ServiceChain, role_data, monitoring_subscriptions]}
+          ServiceMetadataSettings: {get_attr: [{{role.name}}ServiceChain, role_data, service_metadata_settings]}
 {% endfor %}
 
   hostsConfig:
@@ -414,8 +416,8 @@ resources:
 {% for role in roles %}
               - {get_attr: [{{role.name}}ServiceChain, role_data, logging_sources]}
 {% endfor %}
-      controller_ips: {get_attr: [Controller, ip_address]}
-      controller_names: {get_attr: [Controller, hostname]}
+      controller_ips: {get_attr: [{{primary_role_name}}, ip_address]}
+      controller_names: {get_attr: [{{primary_role_name}}, hostname]}
       service_ips:
         # Note (shardy) this somewhat complex yaql may be replaced
         # with a map_deep_merge function in ocata.  It merges the
@@ -444,8 +446,16 @@ resources:
 {% for role in roles %}
               - {get_attr: [{{role.name}}IpListMap, short_service_hostnames]}
 {% endfor %}
+      short_service_bootstrap_node:
+        yaql:
+          expression: dict($.data.l.where($ != null).selectMany($.items()).groupBy($[0], $[1], [$[0], $[1].flatten().first()]))
+          data:
+            l:
+{% for role in roles %}
+              - {get_attr: [{{role.name}}IpListMap, short_service_bootstrap_hostnames]}
+{% endfor %}
       # FIXME(shardy): These require further work to move into service_ips
-      memcache_node_ips: {get_attr: [ControllerIpListMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, MemcachedNetwork]}]}
+      memcache_node_ips: {get_attr: [{{primary_role_name}}IpListMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, MemcachedNetwork]}]}
       NetVipMap: {get_attr: [VipMap, net_ip_map]}
       RedisVirtualIP: {get_attr: [RedisVirtualIP, ip_address]}
       ServiceNetMap: {get_attr: [ServiceNetMap, service_net_map_lower]}
@@ -477,7 +487,7 @@ resources:
     type: OS::TripleO::Network
 
   ControlVirtualIP:
-    type: OS::Neutron::Port
+    type: OS::TripleO::Network::Ports::ControlPlaneVipPort
     depends_on: Networks
     properties:
       name: control_virtual_ip
@@ -551,12 +561,12 @@ resources:
       PingTestIps:
         list_join:
         - ' '
-        - - {get_attr: [Controller, resource.0.external_ip_address]}
-          - {get_attr: [Controller, resource.0.internal_api_ip_address]}
-          - {get_attr: [Controller, resource.0.storage_ip_address]}
-          - {get_attr: [Controller, resource.0.storage_mgmt_ip_address]}
-          - {get_attr: [Controller, resource.0.tenant_ip_address]}
-          - {get_attr: [Controller, resource.0.management_ip_address]}
+        - - {get_attr: [{{primary_role_name}}, resource.0.external_ip_address]}
+          - {get_attr: [{{primary_role_name}}, resource.0.internal_api_ip_address]}
+          - {get_attr: [{{primary_role_name}}, resource.0.storage_ip_address]}
+          - {get_attr: [{{primary_role_name}}, resource.0.storage_mgmt_ip_address]}
+          - {get_attr: [{{primary_role_name}}, resource.0.tenant_ip_address]}
+          - {get_attr: [{{primary_role_name}}, resource.0.management_ip_address]}
 
   UpdateWorkflow:
     type: OS::TripleO::Tasks::UpdateWorkflow
@@ -583,13 +593,14 @@ resources:
       - {{role.name}}AllNodesValidationDeployment
 {% endfor %}
     properties:
+      servers:
 {% for role in roles %}
-      servers: {get_attr: [{{role.name}}, attributes, nova_server_resource]}
+        {{role.name}}: {get_attr: [{{role.name}}, attributes, nova_server_resource]}
 {% endfor %}
 
-  # Post deployment steps for all roles
-  AllNodesDeploySteps:
-    type: OS::TripleO::PostDeploySteps
+  # Upgrade steps for all roles
+  AllNodesUpgradeSteps:
+    type: OS::TripleO::UpgradeSteps
     depends_on:
 {% for role in roles %}
       - {{role.name}}AllNodesDeployment
@@ -604,10 +615,10 @@ resources:
         {{role.name}}: {get_attr: [{{role.name}}ServiceChain, role_data]}
 {% endfor %}
 
-  # Upgrade steps for all roles
-  AllNodesUpgradeSteps:
-    type: OS::TripleO::UpgradeSteps
-    depends_on: AllNodesDeploySteps
+  # Post deployment steps for all roles
+  AllNodesDeploySteps:
+    type: OS::TripleO::PostDeploySteps
+    depends_on: AllNodesUpgradeSteps
     properties:
       servers:
 {% for role in roles %}
@@ -617,7 +628,6 @@ resources:
 {% for role in roles %}
         {{role.name}}: {get_attr: [{{role.name}}ServiceChain, role_data]}
 {% endfor %}
-
 
 outputs:
   ManagedEndpoints:

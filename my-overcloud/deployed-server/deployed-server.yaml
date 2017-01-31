@@ -1,4 +1,4 @@
-heat_template_version: 2014-10-16
+heat_template_version: ocata
 parameters:
   image:
     type: string
@@ -21,7 +21,7 @@ parameters:
     default: ''
   name:
     type: string
-    default: ''
+    default: 'deployed-server'
   image_update_policy:
     type: string
     default: ''
@@ -38,28 +38,52 @@ parameters:
     type: json
     description: Optional scheduler hints to pass to nova
     default: {}
+  UpgradeInitCommand:
+    type: string
+    description: |
+      Command or script snippet to run on all overcloud nodes to
+      initialize the upgrade process. E.g. a repository switch.
+    default: ''
 
 resources:
-  # We just need something which returns a unique ID, but we can't
-  # use RandomString because RefId returns the value, not the physical
-  # resource ID, SoftwareConfig should work as it returns a UUID
   deployed-server:
-    type: OS::TripleO::DeployedServerConfig
+    type: OS::Heat::DeployedServer
     properties:
-      user_data_format: SOFTWARE_CONFIG
+      name: {get_param: name}
+      software_config_transport: {get_param: software_config_transport}
+
+  UpgradeInitConfig:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: script
+      config:
+        list_join:
+        - ''
+        - - "#!/bin/bash\n\n"
+          - "if [[ -f /etc/resolv.conf.save ]] ; then rm /etc/resolv.conf.save; fi\n\n"
+          - get_param: UpgradeInitCommand
+
+  UpgradeInitDeployment:
+    type: OS::Heat::SoftwareDeployment
+    properties:
+      name: UpgradeInitDeployment
+      server: {get_resource: deployed-server}
+      config: {get_resource: UpgradeInitConfig}
+
 
   InstanceIdConfig:
     type: OS::Heat::StructuredConfig
     properties:
-      group: os-apply-config
+      group: apply-config
       config:
-        instance-id: {get_attr: [deployed-server, "OS::stack_id"]}
+        instance-id: {get_resource: deployed-server}
 
   InstanceIdDeployment:
     type: OS::Heat::StructuredDeployment
     properties:
       config: {get_resource: InstanceIdConfig}
       server: {get_resource: deployed-server}
+    depends_on: UpgradeInitDeployment
 
   HostsEntryConfig:
     type: OS::Heat::SoftwareConfig
@@ -69,7 +93,7 @@ resources:
           #!/bin/bash
           set -eux
           mkdir -p $heat_outputs_path
-          host=$(hostnamectl --transient)
+          host=$(hostname -s)
           echo -n $host > $heat_outputs_path.hostname
           cat $heat_outputs_path.hostname
       outputs:
@@ -82,19 +106,28 @@ resources:
       config: {get_resource: HostsEntryConfig}
       server: {get_resource: deployed-server}
 
+  DeployedServerBootstrapConfig:
+    type: OS::TripleO::DeployedServer::Bootstrap
+    properties:
+      server: {get_resource: deployed-server}
+
   ControlPlanePort:
     type: OS::TripleO::DeployedServer::ControlPlanePort
     properties:
-      Hostname: {get_attr: [HostsEntryDeployment, hostname]}
+      network: ctlplane
+      name:
+        list_join:
+          - '-'
+          - - {get_attr: [HostsEntryDeployment, hostname]}
+            - ctlplane
+      replacement_policy: AUTO
 
 outputs:
-  # FIXME(shardy) this is needed because TemplateResource returns an
-  # ARN not a UUID, which overflows the Deployment server_id column..
   OS::stack_id:
-    value: {get_attr: [deployed-server, "OS::stack_id"]}
+    value: {get_resource: deployed-server}
   networks:
     value:
       ctlplane:
-        - {get_attr: [ControlPlanePort, ip_address]}
+        - {get_attr: [ControlPlanePort, fixed_ips, 0, ip_address]}
   name:
     value: {get_attr: [HostsEntryDeployment, hostname]}
