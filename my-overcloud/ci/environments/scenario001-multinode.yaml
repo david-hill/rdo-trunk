@@ -1,17 +1,18 @@
 resource_registry:
-  OS::TripleO::Controller::Net::SoftwareConfig: ../common/net-config-multinode.yaml
-  OS::TripleO::Compute::Net::SoftwareConfig: ../common/net-config-multinode.yaml
+  OS::TripleO::Controller::Net::SoftwareConfig: ../common/net-config-multinode-os-net-config.yaml
+  OS::TripleO::Compute::Net::SoftwareConfig: ../common/net-config-multinode-os-net-config.yaml
   OS::TripleO::Services::CephMon: /usr/share/openstack-tripleo-heat-templates/puppet/services/ceph-mon.yaml
   OS::TripleO::Services::CephOSD: /usr/share/openstack-tripleo-heat-templates/puppet/services/ceph-osd.yaml
   OS::TripleO::Services::CephClient: /usr/share/openstack-tripleo-heat-templates/puppet/services/ceph-client.yaml
   OS::TripleO::Services::PankoApi: /usr/share/openstack-tripleo-heat-templates/puppet/services/panko-api.yaml
+  OS::TripleO::Services::Collectd: /usr/share/openstack-tripleo-heat-templates/puppet/services/metrics/collectd.yaml
+  OS::TripleO::Services::Tacker: /usr/share/openstack-tripleo-heat-templates/puppet/services/tacker.yaml
 
 parameter_defaults:
   ControllerServices:
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::Keystone
     - OS::TripleO::Services::GlanceApi
-    - OS::TripleO::Services::GlanceRegistry
     - OS::TripleO::Services::HeatApi
     - OS::TripleO::Services::HeatApiCfn
     - OS::TripleO::Services::HeatApiCloudwatch
@@ -30,10 +31,12 @@ parameter_defaults:
     - OS::TripleO::Services::Pacemaker
     - OS::TripleO::Services::NovaConductor
     - OS::TripleO::Services::NovaApi
+    - OS::TripleO::Services::NovaPlacement
     - OS::TripleO::Services::NovaMetadata
     - OS::TripleO::Services::NovaScheduler
     - OS::TripleO::Services::Ntp
     - OS::TripleO::Services::Snmp
+    - OS::TripleO::Services::Sshd
     - OS::TripleO::Services::Timezone
     - OS::TripleO::Services::NovaCompute
     - OS::TripleO::Services::NovaLibvirt
@@ -59,6 +62,8 @@ parameter_defaults:
     - OS::TripleO::Services::CinderBackup
     - OS::TripleO::Services::CinderScheduler
     - OS::TripleO::Services::CinderVolume
+    - OS::TripleO::Services::Collectd
+    - OS::TripleO::Services::Tacker
   ControllerExtraConfig:
     nova::compute::libvirt::services::libvirt_virt_type: qemu
     nova::compute::libvirt::libvirt_virt_type: qemu
@@ -81,3 +86,14 @@ parameter_defaults:
   GlanceBackend: rbd
   GnocchiBackend: rbd
   CinderEnableIscsiBackend: false
+  BannerText: |
+    ******************************************************************
+    * This system is for the use of authorized users only. Usage of  *
+    * this system may be monitored and recorded by system personnel. *
+    * Anyone using this system expressly consents to such monitoring *
+    * and is advised that if such monitoring reveals possible        *
+    * evidence of criminal activity, system personnel may provide    *
+    * the evidence from such monitoring to law enforcement officials.*
+    ******************************************************************
+  CollectdExtraPlugins:
+    - rrdtool

@@ -45,8 +45,23 @@ parameters:
     default:
       tag: openstack.glance.api
       path: /var/log/glance/api.log
+  EnableInternalTLS:
+    type: boolean
+    default: false
+
+conditions:
+  use_tls_proxy: {equals : [{get_param: EnableInternalTLS}, true]}
 
 resources:
+
+  TLSProxyBase:
+    type: OS::TripleO::Services::TLSProxyBase
+    properties:
+      ServiceNetMap: {get_param: ServiceNetMap}
+      DefaultPasswords: {get_param: DefaultPasswords}
+      EndpointMap: {get_param: EndpointMap}
+      EnableInternalTLS: {get_param: EnableInternalTLS}
+
   GlanceBase:
     type: ./glance-base.yaml
     properties:
@@ -66,6 +81,7 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [GlanceBase, role_data, config_settings]
+          - get_attr: [TLSProxyBase, role_data, config_settings]
           - glance::api::database_connection:
               list_join:
                 - ''
@@ -80,12 +96,8 @@ outputs:
             glance::api::bind_port: {get_param: [EndpointMap, GlanceInternal, port]}
             glance::api::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri] }
             glance::api::authtoken::auth_url: { get_param: [EndpointMap, KeystoneAdmin, uri_no_suffix] }
-            glance::api::registry_host:
-              str_replace:
-                template: "'REGISTRY_HOST'"
-                params:
-                  REGISTRY_HOST: {get_param: [EndpointMap, GlanceRegistryInternal, host]}
-            glance::api::registry_client_protocol: {get_param: [EndpointMap, GlanceRegistryInternal, protocol] }
+            glance::api::enable_v1_api: false
+            glance::api::enable_v2_api: true
             glance::api::authtoken::password: {get_param: GlancePassword}
             glance::api::enable_proxy_headers_parsing: true
             glance::api::debug: {get_param: Debug}
@@ -104,18 +116,37 @@ outputs:
             # internal_api -> IP
             # internal_api_uri -> [IP]
             # internal_api_subnet - > IP/CIDR
-            glance::api::bind_host: {get_param: [ServiceNetMap, GlanceApiNetwork]}
+            tripleo::profile::base::glance::api::tls_proxy_bind_ip:
+              get_param: [ServiceNetMap, GlanceApiNetwork]
+            tripleo::profile::base::glance::api::tls_proxy_fqdn:
+              str_replace:
+                template:
+                  "%{hiera('fqdn_$NETWORK')}"
+                params:
+                  $NETWORK: {get_param: [ServiceNetMap, GlanceApiNetwork]}
+            tripleo::profile::base::glance::api::tls_proxy_port:
+              get_param: [EndpointMap, GlanceInternal, port]
+            # Bind to localhost if internal TLS is enabled, since we put a TLs
+            # proxy in front.
+            glance::api::bind_host:
+              if:
+              - use_tls_proxy
+              - 'localhost'
+              - {get_param: [ServiceNetMap, GlanceApiNetwork]}
       step_config: |
         include ::tripleo::profile::base::glance::api
       service_config_settings:
         get_attr: [GlanceBase, role_data, service_config_settings]
       upgrade_tasks:
+        - name: "PreUpgrade step0,validation: Check service openstack-glance-api is running"
+          shell: /usr/bin/systemctl show 'openstack-glance-api' --property ActiveState | grep '\bactive\b'
+          tags: step0,validation
         - name: Stop glance_api service
           tags: step2
           service: name=openstack-glance-api state=stopped
+        - name: Stop and disable glance registry (removed for Ocata)
+          tags: step2
+          service: name=openstack-glance-registry state=stopped enabled=no
         - name: Sync glance_api DB
           tags: step5
           command: glance-manage --config-file=/etc/glance/glance-api.conf db_sync
-        - name: Start glance_api service
-          tags: step6
-          service: name=openstack-glance-api state=started

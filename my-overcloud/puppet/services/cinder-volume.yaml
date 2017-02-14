@@ -20,6 +20,10 @@ parameters:
     default: lioadm
     description: The iSCSI helper to use with cinder.
     type: string
+  CinderISCSIProtocol:
+    default: iscsi
+    description: Whether to use TCP ('iscsi') or iSER RDMA ('iser') for iSCSI
+    type: string
   CinderLVMLoopDeviceSize:
     default: 10280
     description: The size of the loopback file used by the cinder LVM driver.
@@ -97,6 +101,7 @@ outputs:
                   SERVERS: {get_param: CinderNfsServers}
             tripleo::profile::base::cinder::volume::iscsi::cinder_lvm_loop_device_size: {get_param: CinderLVMLoopDeviceSize}
             tripleo::profile::base::cinder::volume::iscsi::cinder_iscsi_helper: {get_param: CinderISCSIHelper}
+            tripleo::profile::base::cinder::volume::iscsi::cinder_iscsi_protocol: {get_param: CinderISCSIProtocol}
             tripleo::profile::base::cinder::volume::rbd::cinder_rbd_pool_name: {get_param: CinderRbdPoolName}
             tripleo::profile::base::cinder::volume::rbd::cinder_rbd_user_name: {get_param: CephClientUserName}
             tripleo.cinder_volume.firewall_rules:
@@ -111,13 +116,12 @@ outputs:
       step_config: |
         include ::tripleo::profile::base::cinder::volume
       upgrade_tasks:
+        - name: "PreUpgrade step0,validation: Check service openstack-cinder-volume is running"
+          shell: /usr/bin/systemctl show 'openstack-cinder-volume' --property ActiveState | grep '\bactive\b'
+          tags: step0,validation
         - name: Stop cinder_volume service
           tags: step2
           service: name=openstack-cinder-volume state=stopped
         - name: Sync cinder_volume DB
           tags: step5
           command: cinder-manage db sync
-        - name: Start cinder_volume service
-          tags: step6
-          service: name=openstack-cinder-volume state=started
-

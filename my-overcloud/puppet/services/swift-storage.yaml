@@ -56,6 +56,17 @@ resources:
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
 
+conditions:
+  swift_mount_check:
+    or:
+    - equals:
+      - get_param: SwiftMountCheck
+      - true
+    - not:
+        equals:
+        - get_param: SwiftRawDisks
+        - {}
+
 outputs:
   role_data:
     description: Role data for the Swift Proxy role.
@@ -65,7 +76,7 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [SwiftBase, role_data, config_settings]
-          - swift::storage::all::mount_check: {get_param: SwiftMountCheck}
+          - swift::storage::all::mount_check: {if: [swift_mount_check, true, false]}
             tripleo::profile::base::swift::storage::enable_swift_storage: {get_param: ControllerEnableSwiftStorage}
             tripleo.swift_storage.firewall_rules:
               '123 swift storage':
@@ -90,3 +101,20 @@ outputs:
             swift::storage::all::storage_local_net_ip: {get_param: [ServiceNetMap, SwiftStorageNetwork]}
       step_config: |
         include ::tripleo::profile::base::swift::storage
+      upgrade_tasks:
+        - name: Stop swift storage services
+          tags: step2
+          service: name={{ item }} state=stopped
+          with_items:
+            - openstack-swift-account-auditor
+            - openstack-swift-account-reaper
+            - openstack-swift-account-replicator
+            - openstack-swift-account
+            - openstack-swift-container-auditor
+            - openstack-swift-container-replicator
+            - openstack-swift-container-updater
+            - openstack-swift-container
+            - openstack-swift-object-auditor
+            - openstack-swift-object-replicator
+            - openstack-swift-object-updater
+            - openstack-swift-object

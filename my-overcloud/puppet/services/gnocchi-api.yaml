@@ -103,12 +103,6 @@ outputs:
             # internal_api_subnet - > IP/CIDR
             gnocchi::wsgi::apache::bind_host: {get_param: [ServiceNetMap, GnocchiApiNetwork]}
             gnocchi::wsgi::apache::wsgi_process_display_name: 'gnocchi_wsgi'
-            gnocchi::api::host:
-              str_replace:
-                template:
-                  "%{hiera('fqdn_$NETWORK')}"
-                params:
-                  $NETWORK: {get_param: [ServiceNetMap, GnocchiApiNetwork]}
 
             gnocchi::api::keystone_auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri]}
             gnocchi::api::keystone_identity_uri: {get_param: [EndpointMap, KeystoneAdmin, uri_no_suffix]}
@@ -131,3 +125,9 @@ outputs:
           gnocchi::db::mysql::allowed_hosts:
             - '%'
             - "%{hiera('mysql_bind_host')}"
+      metadata_settings:
+        get_attr: [ApacheServiceBase, role_data, metadata_settings]
+      upgrade_tasks:
+        - name: Stop gnocchi_api service (running under httpd)
+          tags: step2
+          service: name=httpd state=stopped

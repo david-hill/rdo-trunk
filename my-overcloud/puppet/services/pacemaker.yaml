@@ -29,11 +29,22 @@ parameters:
     default: false
     description: Whether to enable fencing in Pacemaker or not.
     type: boolean
+  PacemakerRemoteAuthkey:
+    type: string
+    description: The authkey for the pacemaker remote service.
+    hidden: true
+    default: ''
   PcsdPassword:
     type: string
     description: The password for the 'pcsd' user for pacemaker.
     hidden: true
     default: ''
+  CorosyncSettleTries:
+    type: number
+    description: Number of tries for cluster settling. This has the
+                 same default as the pacemaker puppet module. Override
+                 to a smaller value when in need to replace a controller node.
+    default: 360
   FencingConfig:
     default: {}
     description: |
@@ -76,6 +87,10 @@ parameters:
         \[(?<pid>[^ ]*)\]
         (?<host>[^ ]*)
         (?<message>.*)$/
+  PacemakerResources:
+    type: comma_delimited_list
+    description: List of resources managed by pacemaker
+    default: ['rabbitmq','haproxy']
 
 outputs:
   role_data:
@@ -92,6 +107,7 @@ outputs:
         pacemaker::resource_defaults::defaults:
           resource-stickiness: { value: INFINITY }
         corosync_token_timeout: 10000
+        pacemaker::corosync::settle_tries: {get_param: CorosyncSettleTries}
         tripleo.pacemaker.firewall_rules:
           '130 pacemaker tcp':
             proto: 'tcp'
@@ -112,5 +128,20 @@ outputs:
               passwords:
                 - {get_param: PcsdPassword}
                 - {get_param: [DefaultPasswords, pcsd_password]}
+        tripleo::profile::base::pacemaker::remote_authkey: {get_param: PacemakerRemoteAuthkey}
       step_config: |
         include ::tripleo::profile::base::pacemaker
+      upgrade_tasks:
+        - name: Check pacemaker cluster running before upgrade
+          tags: step0,validation
+          pacemaker_cluster: state=online check_and_fail=true
+        - name: Stop pacemaker cluster
+          tags: step1
+          pacemaker_cluster: state=offline
+        - name: Start pacemaker cluster
+          tags: step4
+          pacemaker_cluster: state=online
+        - name: Check pacemaker resource
+          tags: step4
+          pacemaker_resource: state=started resource={{item}} check_mode=true wait_for_resource=true timeout=200
+          with_items: {get_param: PacemakerResources}

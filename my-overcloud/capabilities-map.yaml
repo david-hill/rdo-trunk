@@ -160,6 +160,16 @@ topics:
             description: Deploy Mistral service
             requires:
               - overcloud-resource-registry-puppet.yaml
+      - title: Ceilometer Api
+        description:
+        environments:
+          - file: environments/services/disable-ceilometer-api.yaml
+            title: Ceilometer Api
+            description: Disable Ceilometer Api service. This service is
+              deprecated and will be removed in future releases. Please move
+              to using gnocchi/aodh/panko apis instead.
+            requires:
+              - overcloud-resource-registry-puppet.yaml
 
   # - title: Network Interface Configuration
   #   description:
@@ -360,6 +370,11 @@ topics:
             description: Enable C-Fabric in the overcloud
             requires:
               - overcloud-resource-registry-puppet.yaml
+          - file: environments/neutron-ml2-fujitsu-fossw.yaml
+            title: Fujitsu Neutron plugin for FOS
+            description: Enable FOS in the overcloud
+            requires:
+              - overcloud-resource-registry-puppet.yaml
 
   - title: Nova Extensions
     description:
@@ -398,10 +413,10 @@ topics:
             requires:
               - overcloud-resource-registry-puppet.yaml
           - file: environments/cinder-dellsc-config.yaml
-            title: Cinder Dell Storage Center ISCSI backend
+            title: Cinder Dell EMC Storage Center ISCSI backend
             description: >
-              Enables a Cinder Dell Storage Center ISCSI backend, configured
-              via puppet
+              Enables a Cinder Dell EMC Storage Center ISCSI backend,
+              configured via puppet
             requires:
               - overcloud-resource-registry-puppet.yaml
           - file: environments/cinder-hpelefthand-config.yaml
@@ -411,10 +426,17 @@ topics:
               via puppet
             requires:
               - overcloud-resource-registry-puppet.yaml
-          - file: environments/cinder-eqlx-config.yaml
-            title: Cinder EQLX backend
+          - file: environments/cinder-dellps-config.yaml
+            title: Cinder Dell EMC PS Series backend
             description: >
-              Enables a Cinder EQLX backend, configured via puppet
+              Enables a Cinder Dell EMC PS Series backend,
+              configured via puppet
+            requires:
+              - overcloud-resource-registry-puppet.yaml
+          - file: environments/cinder-iser.yaml
+            title: Cinder iSER backend
+            description: >
+              Enable a Cinder iSER RDMA backend, configured via puppet
             requires:
               - overcloud-resource-registry-puppet.yaml
       - title: Externally managed Ceph
@@ -513,6 +535,34 @@ topics:
         environments:
           - file: environments/logging-environment.yaml
             title: Enable fluentd client
+            description:
+            requires:
+              - overcloud-resource-registry-puppet.yaml
+
+  - title: Security Options
+    description: Security Hardening Options
+    environment_groups:
+      - title: SSH Banner Text
+        description: Enables population of SSH Banner Text
+        environments:
+          - file: environments/sshd-banner.yaml
+            title: SSH Banner Text
+            description:
+            requires:
+              - overcloud-resource-registry-puppet.yaml
+      - title: Horizon Password Validation
+        description: Enable Horizon Password validation
+        environments:
+          - file: environments/horizon_password_validation.yaml
+            title: Horizon Password Validation
+            description:
+            requires:
+              - overcloud-resource-registry-puppet.yaml
+      - title: AuditD Rules
+        description:  Management of AuditD rules
+        environments:
+          - file: environments/auditd.yaml
+            title: AuditD Rule Management
             description:
             requires:
               - overcloud-resource-registry-puppet.yaml

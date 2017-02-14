@@ -17,10 +17,45 @@ parameter_defaults:
     CinderAdmin: {protocol: 'https', port: '8776', host: 'CLOUDNAME'}
     CinderInternal: {protocol: 'https', port: '8776', host: 'CLOUDNAME'}
     CinderPublic: {protocol: 'https', port: '13776', host: 'CLOUDNAME'}
+    ContrailAnalyticsApiAdmin: {protocol: 'http', port: '8081', host: 'IP_ADDRESS'}
+    ContrailAnalyticsApiInternal: {protocol: 'http', port: '8081', host: 'IP_ADDRESS'}
+    ContrailAnalyticsApiPublic: {protocol: 'http', port: '8081', host: 'IP_ADDRESS'}
+    ContrailAnalyticsCollectorHttpAdmin: {protocol: 'http', port: '8089',
+      host: 'IP_ADDRESS'}
+    ContrailAnalyticsCollectorHttpInternal: {protocol: 'http', port: '8089',
+      host: 'IP_ADDRESS'}
+    ContrailAnalyticsCollectorHttpPublic: {protocol: 'http', port: '8089',
+      host: 'IP_ADDRESS'}
+    ContrailAnalyticsCollectorSandeshAdmin: {protocol: 'http', port: '8086',
+      host: 'IP_ADDRESS'}
+    ContrailAnalyticsCollectorSandeshInternal: {protocol: 'http', port: '8086',
+      host: 'IP_ADDRESS'}
+    ContrailAnalyticsCollectorSandeshPublic: {protocol: 'http', port: '8086',
+      host: 'IP_ADDRESS'}
+    ContrailAnalyticsHttpAdmin: {protocol: 'http', port: '8090', host: 'IP_ADDRESS'}
+    ContrailAnalyticsHttpInternal: {protocol: 'http', port: '8090', host: 'IP_ADDRESS'}
+    ContrailAnalyticsHttpPublic: {protocol: 'http', port: '8090', host: 'IP_ADDRESS'}
+    ContrailAnalyticsRedisAdmin: {protocol: 'http', port: '6379', host: 'IP_ADDRESS'}
+    ContrailAnalyticsRedisInternal: {protocol: 'http', port: '6379', host: 'IP_ADDRESS'}
+    ContrailAnalyticsRedisPublic: {protocol: 'http', port: '6379', host: 'IP_ADDRESS'}
+    ContrailConfigAdmin: {protocol: 'http', port: '8082', host: 'IP_ADDRESS'}
+    ContrailConfigInternal: {protocol: 'http', port: '8082', host: 'IP_ADDRESS'}
+    ContrailConfigPublic: {protocol: 'http', port: '8082', host: 'IP_ADDRESS'}
+    ContrailDiscoveryAdmin: {protocol: 'http', port: '5998', host: 'IP_ADDRESS'}
+    ContrailDiscoveryInternal: {protocol: 'http', port: '5998', host: 'IP_ADDRESS'}
+    ContrailDiscoveryPublic: {protocol: 'http', port: '5998', host: 'IP_ADDRESS'}
+    ContrailWebuiHttpAdmin: {protocol: 'http', port: '8080', host: 'IP_ADDRESS'}
+    ContrailWebuiHttpInternal: {protocol: 'http', port: '8080', host: 'IP_ADDRESS'}
+    ContrailWebuiHttpPublic: {protocol: 'http', port: '8080', host: 'IP_ADDRESS'}
+    ContrailWebuiHttpsAdmin: {protocol: 'http', port: '8143', host: 'IP_ADDRESS'}
+    ContrailWebuiHttpsInternal: {protocol: 'http', port: '8143', host: 'IP_ADDRESS'}
+    ContrailWebuiHttpsPublic: {protocol: 'http', port: '8143', host: 'IP_ADDRESS'}
+    Ec2ApiAdmin: {protocol: 'https', port: '8788', host: 'CLOUDNAME'}
+    Ec2ApiInternal: {protocol: 'https', port: '8788', host: 'CLOUDNAME'}
+    Ec2ApiPublic: {protocol: 'https', port: '13788', host: 'CLOUDNAME'}
     GlanceAdmin: {protocol: 'https', port: '9292', host: 'CLOUDNAME'}
     GlanceInternal: {protocol: 'https', port: '9292', host: 'CLOUDNAME'}
     GlancePublic: {protocol: 'https', port: '13292', host: 'CLOUDNAME'}
-    GlanceRegistryInternal: {protocol: 'https', port: '9191', host: 'CLOUDNAME'}
     GnocchiAdmin: {protocol: 'https', port: '8041', host: 'CLOUDNAME'}
     GnocchiInternal: {protocol: 'https', port: '8041', host: 'CLOUDNAME'}
     GnocchiPublic: {protocol: 'https', port: '13041', host: 'CLOUDNAME'}
@@ -50,9 +85,15 @@ parameter_defaults:
     NovaAdmin: {protocol: 'https', port: '8774', host: 'CLOUDNAME'}
     NovaInternal: {protocol: 'https', port: '8774', host: 'CLOUDNAME'}
     NovaPublic: {protocol: 'https', port: '13774', host: 'CLOUDNAME'}
+    NovaPlacementAdmin: {protocol: 'https', port: '8778', host: 'CLOUDNAME'}
+    NovaPlacementInternal: {protocol: 'https', port: '8778', host: 'CLOUDNAME'}
+    NovaPlacementPublic: {protocol: 'https', port: '13778', host: 'CLOUDNAME'}
     NovaVNCProxyAdmin: {protocol: 'https', port: '6080', host: 'CLOUDNAME'}
     NovaVNCProxyInternal: {protocol: 'https', port: '6080', host: 'CLOUDNAME'}
     NovaVNCProxyPublic: {protocol: 'https', port: '13080', host: 'CLOUDNAME'}
+    OctaviaAdmin: {protocol: 'https', port: '9876', host: 'IP_ADDRESS'}
+    OctaviaInternal: {protocol: 'https', port: '9876', host: 'IP_ADDRESS'}
+    OctaviaPublic: {protocol: 'https', port: '13876', host: 'CLOUDNAME'}
     PankoAdmin: {protocol: 'https', port: '8779', host: 'CLOUDNAME'}
     PankoInternal: {protocol: 'https', port: '8779', host: 'CLOUDNAME'}
     PankoPublic: {protocol: 'https', port: '13779', host: 'CLOUDNAME'}
@@ -62,6 +103,9 @@ parameter_defaults:
     SwiftAdmin: {protocol: 'https', port: '8080', host: 'CLOUDNAME'}
     SwiftInternal: {protocol: 'https', port: '8080', host: 'CLOUDNAME'}
     SwiftPublic: {protocol: 'https', port: '13808', host: 'CLOUDNAME'}
+    TackerAdmin: {protocol: 'https', port: '9890', host: 'CLOUDNAME'}
+    TackerInternal: {protocol: 'https', port: '9890', host: 'CLOUDNAME'}
+    TackerPublic: {protocol: 'https', port: '13989', host: 'CLOUDNAME'}
     ZaqarAdmin: {protocol: 'https', port: '8888', host: 'CLOUDNAME'}
     ZaqarInternal: {protocol: 'https', port: '8888', host: 'CLOUDNAME'}
     ZaqarPublic: {protocol: 'https', port: '13888', host: 'CLOUDNAME'}

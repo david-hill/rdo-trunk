@@ -91,7 +91,6 @@ outputs:
             cinder::config:
               DEFAULT/swift_catalog_info:
                 value: 'object-store:swift:internalURL'
-            cinder::glance::glance_api_servers: {get_param: [EndpointMap, GlanceInternal, uri]}
             tripleo::profile::base::cinder::cinder_enable_db_purge: {get_param: CinderEnableDBPurge}
             tripleo.cinder_api.firewall_rules:
               '119 cinder':
@@ -147,7 +146,12 @@ outputs:
           cinder::db::mysql::allowed_hosts:
             - '%'
             - "%{hiera('mysql_bind_host')}"
+      metadata_settings:
+        get_attr: [ApacheServiceBase, role_data, metadata_settings]
       upgrade_tasks:
+        - name: "PreUpgrade step0,validation: Check service openstack-cinder-api is running"
+          shell: /usr/bin/systemctl show 'openstack-cinder-api' --property ActiveState | grep '\bactive\b'
+          tags: step0,validation
         - name: check for cinder running under apache (post upgrade)
           tags: step2
           shell: "apachectl -t -D DUMP_VHOSTS | grep -q cinder"
@@ -160,6 +164,3 @@ outputs:
         - name: Stop and disable cinder_api service (pre-upgrade not under httpd)
           tags: step2
           service: name=openstack-cinder-api state=stopped enabled=no
-        - name: Start cinder_api service (running under httpd)
-          tags: step6
-          service: name=httpd state=started

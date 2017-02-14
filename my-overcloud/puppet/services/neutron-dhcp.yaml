@@ -39,6 +39,10 @@ parameters:
     default:
       tag: openstack.neutron.agent.dhcp
       path: /var/log/neutron/dhcp-agent.log
+  NeutronDhcpAgentDnsmasqDnsServers:
+    default: []
+    description: List of servers to use as dnsmasq forwarders
+    type: comma_delimited_list
 
 resources:
 
@@ -64,6 +68,7 @@ outputs:
           - neutron::agents::dhcp::enable_isolated_metadata: {get_param: NeutronEnableIsolatedMetadata}
             neutron::agents::dhcp::enable_force_metadata: {get_param: NeutronEnableForceMetadata}
             neutron::agents::dhcp::enable_metadata_network: {get_param: NeutronEnableMetadataNetwork}
+            neutron::agents::dhcp::dnsmasq_dns_servers: {get_param: NeutronDhcpAgentDnsmasqDnsServers}
             tripleo.neutron_dhcp.firewall_rules:
               '115 neutron dhcp input':
                 proto: 'udp'
@@ -75,9 +80,9 @@ outputs:
       step_config: |
         include tripleo::profile::base::neutron::dhcp
       upgrade_tasks:
+        - name: "PreUpgrade step0,validation: Check service neutron-dhcp-agent is running"
+          shell: /usr/bin/systemctl show 'neutron-dhcp-agent' --property ActiveState | grep '\bactive\b'
+          tags: step0,validation
         - name: Stop neutron_dhcp service
           tags: step2
           service: name=neutron-dhcp-agent state=stopped
-        - name: Start neutron_dhcp service
-          tags: step6
-          service: name=neutron-dhcp-agent state=started
