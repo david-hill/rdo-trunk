@@ -96,13 +96,12 @@ outputs:
               - '?bind_address='
               - "%{hiera('tripleo::profile::base::database::mysql::client_bind_address')}"
         ceilometer_backend: {get_param: CeilometerBackend}
-        ceilometer::metering_secret: {get_param: CeilometerMeteringSecret}
         # we include db_sync class in puppet-tripleo
         ceilometer::db::sync_db: false
         ceilometer::keystone::authtoken::project_name: 'service'
         ceilometer::keystone::authtoken::password: {get_param: CeilometerPassword}
         ceilometer::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri] }
-        ceilometer::keystone::authtoken::auth_url: { get_param: [EndpointMap, KeystoneAdmin, uri_no_suffix] }
+        ceilometer::keystone::authtoken::auth_url: { get_param: [EndpointMap, KeystoneInternal, uri_no_suffix] }
         ceilometer::agent::auth::auth_password: {get_param: CeilometerPassword}
         ceilometer::agent::auth::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix] }
         ceilometer::agent::notification::event_pipeline_publishers: {get_param: EventPipelinePublishers}

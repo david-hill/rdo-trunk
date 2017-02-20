@@ -2,7 +2,7 @@ resource_registry:
 
   OS::TripleO::SoftwareDeployment: OS::Heat::StructuredDeployment
   OS::TripleO::PostDeploySteps: puppet/post.yaml
-  OS::TripleO::PostUpgradeSteps: puppet/post.yaml
+  OS::TripleO::PostUpgradeSteps: puppet/post-upgrade.yaml
   OS::TripleO::AllNodes::SoftwareConfig: puppet/all-nodes-config.yaml
   OS::TripleO::Hosts::SoftwareConfig: hosts-config.yaml
   OS::TripleO::DefaultPasswords: default_passwords.yaml
@@ -10,6 +10,9 @@ resource_registry:
   # Tasks (for internal TripleO usage)
   OS::TripleO::Tasks::UpdateWorkflow: OS::Heat::None
   OS::TripleO::Tasks::PackageUpdate: extraconfig/tasks/yum_update.yaml
+
+  OS::TripleO::Tasks::SwiftRingDeploy: extraconfig/tasks/swift-ring-deploy.yaml
+  OS::TripleO::Tasks::SwiftRingUpdate: extraconfig/tasks/swift-ring-update.yaml
 
 {% for role in roles %}
   OS::TripleO::{{role.name}}::PreNetworkConfig: OS::Heat::None
