@@ -23,6 +23,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import multiprocessing
 
 
 # this is to match what we do in deployed-server
@@ -45,6 +46,15 @@ def pull_image(name):
 
 
 def rm_container(name):
+    if os.environ.get('SHOW_DIFF', None):
+        print('Diffing container: %s' % name)
+        subproc = subprocess.Popen(['/usr/bin/docker', 'diff', name],
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        cmd_stdout, cmd_stderr = subproc.communicate()
+        print(cmd_stdout)
+        print(cmd_stderr)
+
     print('Removing container: %s' % name)
     subproc = subprocess.Popen(['/usr/bin/docker', 'rm', name],
                                stdout=subprocess.PIPE,
@@ -53,6 +63,8 @@ def rm_container(name):
     print(cmd_stdout)
     print(cmd_stderr)
 
+process_count = int(os.environ.get('PROCESS_COUNT',
+                                   multiprocessing.cpu_count()))
 
 config_file = os.environ.get('CONFIG', '/var/lib/docker-puppet/docker-puppet.json')
 print('docker-puppet')
@@ -106,34 +118,25 @@ for service in (json_data or []):
 
 print('Service compilation completed.\n')
 
-for config_volume in configs:
-
-    service = configs[config_volume]
-    puppet_tags = service[1] or ''
-    manifest = service[2] or ''
-    config_image = service[3] or ''
-    volumes = service[4] if len(service) > 4 else []
-
-    if puppet_tags:
-        puppet_tags = "file,file_line,concat,%s" % puppet_tags
-    else:
-        puppet_tags = "file,file_line,concat"
+def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volumes)):
 
     print('---------')
     print('config_volume %s' % config_volume)
     print('puppet_tags %s' % puppet_tags)
     print('manifest %s' % manifest)
     print('config_image %s' % config_image)
+    print('volumes %s' % volumes)
     hostname = short_hostname()
+    sh_script = '/var/lib/docker-puppet/docker-puppet-%s.sh' % config_volume
 
-    with open('/var/lib/docker-puppet/docker-puppet.sh', 'w') as script_file:
+    with open(sh_script, 'w') as script_file:
         os.chmod(script_file.name, 0755)
         script_file.write("""#!/bin/bash
         set -ex
         mkdir -p /etc/puppet
         cp -a /tmp/puppet-etc/* /etc/puppet
         rm -Rf /etc/puppet/ssl # not in use and causes permission errors
-        echo '{"step": 6}' > /etc/puppet/hieradata/docker.json
+        echo '{"step": %(step)s}' > /etc/puppet/hieradata/docker.json
         TAGS=""
         if [ -n "%(puppet_tags)s" ]; then
             TAGS='--tags "%(puppet_tags)s"'
@@ -168,7 +171,8 @@ for config_volume in configs:
         fi
         """ % {'puppet_tags': puppet_tags, 'name': config_volume,
                'hostname': hostname,
-               'no_archive': os.environ.get('NO_ARCHIVE', '')})
+               'no_archive': os.environ.get('NO_ARCHIVE', ''),
+               'step': os.environ.get('STEP', '6')})
 
     with tempfile.NamedTemporaryFile() as tmp_man:
         with open(tmp_man.name, 'w') as man_file:
@@ -186,12 +190,12 @@ for config_volume in configs:
                 '--volume', '/usr/share/openstack-puppet/modules/:/usr/share/openstack-puppet/modules/:ro',
                 '--volume', '/var/lib/config-data/:/var/lib/config-data/:rw',
                 '--volume', 'tripleo_logs:/var/log/tripleo/',
-                '--volume', '/var/lib/docker-puppet/docker-puppet.sh:/var/lib/docker-puppet/docker-puppet.sh:ro']
+                '--volume', '%s:%s:rw' % (sh_script, sh_script) ]
 
         for volume in volumes:
             dcmd.extend(['--volume', volume])
 
-        dcmd.extend(['--entrypoint', '/var/lib/docker-puppet/docker-puppet.sh'])
+        dcmd.extend(['--entrypoint', sh_script])
 
         env = {}
         if os.environ.get('NET_HOST', 'false') == 'true':
@@ -207,6 +211,34 @@ for config_volume in configs:
         print(cmd_stderr)
         if subproc.returncode != 0:
             print('Failed running docker-puppet.py for %s' % config_volume)
-            sys.exit(subproc.returncode)
-        else:
-            rm_container('docker-puppet-%s' % config_volume)
+        rm_container('docker-puppet-%s' % config_volume)
+        return subproc.returncode
+
+# Holds all the information for each process to consume.
+# Instead of starting them all linearly we run them using a process
+# pool.  This creates a list of arguments for the above function
+# to consume.
+process_map = []
+
+for config_volume in configs:
+
+    service = configs[config_volume]
+    puppet_tags = service[1] or ''
+    manifest = service[2] or ''
+    config_image = service[3] or ''
+    volumes = service[4] if len(service) > 4 else []
+
+    if puppet_tags:
+        puppet_tags = "file,file_line,concat,%s" % puppet_tags
+    else:
+        puppet_tags = "file,file_line,concat"
+
+    process_map.append([config_volume, puppet_tags, manifest, config_image, volumes])
+
+for p in process_map:
+    print '--\n%s' % p
+
+# Fire off processes to perform each configuration.  Defaults
+# to the number of CPUs on the system.
+p = multiprocessing.Pool(process_count)
+p.map(mp_puppet_config, process_map)

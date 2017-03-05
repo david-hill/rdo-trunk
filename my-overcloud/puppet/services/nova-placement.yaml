@@ -79,6 +79,10 @@ outputs:
               dport:
                 - 8778
                 - 13778
+          nova::keystone::authtoken::project_name: 'service'
+          nova::keystone::authtoken::password: {get_param: NovaPassword}
+          nova::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri] }
+          nova::keystone::authtoken::auth_url: {get_param: [EndpointMap, KeystoneAdmin, uri_no_suffix]}
           nova::wsgi::apache_placement::api_port: '8778'
           nova::wsgi::apache_placement::ssl: {get_param: EnableInternalTLS}
           # NOTE: bind IP is found in Heat replacing the network name with the local node IP
@@ -122,3 +126,8 @@ outputs:
         - name: Stop nova_placement service (running under httpd)
           tags: step2
           service: name=httpd state=stopped
+        # The nova placement API isn't installed in newton images, so install
+        # it on upgrade
+        - name: Install nova-placement packages on upgrade
+          tags: step3
+          yum: name=openstack-nova-placement-api state=latest

@@ -17,6 +17,10 @@
 # disable_constraints: (boolean) optional, whether to disable Nova and Glance
 # constraints for each role specified in the templates.
 #
+# disable_upgrade_deployment: (boolean) optional, whether to run the
+# ansible upgrade steps for all services that are deployed on the role. If set
+# to True, the operator will drive the upgrade for this role's nodes.
+#
 # upgrade_batch_size: (number): batch size for upgrades where tasks are
 # specified by services to run in batches vs all nodes at once.
 # This defaults to 1, but larger batches may be specified here.
@@ -47,6 +51,7 @@
     - OS::TripleO::Services::HeatApiCloudwatch
     - OS::TripleO::Services::HeatEngine
     - OS::TripleO::Services::MySQL
+    - OS::TripleO::Services::MySQLClient
     - OS::TripleO::Services::NeutronDhcpAgent
     - OS::TripleO::Services::NeutronL3Agent
     - OS::TripleO::Services::NeutronMetadataAgent
@@ -120,6 +125,7 @@
     - OS::TripleO::Services::OctaviaHealthManager
     - OS::TripleO::Services::OctaviaHousekeeping
     - OS::TripleO::Services::OctaviaWorker
+    - OS::TripleO::Services::Vpp
 
 - name: Compute
   CountDefault: 1
@@ -149,6 +155,8 @@
     - OS::TripleO::Services::FluentdClient
     - OS::TripleO::Services::AuditD
     - OS::TripleO::Services::Collectd
+    - OS::TripleO::Services::Vpp
+    - OS::TripleO::Services::MySQLClient
 
 - name: BlockStorage
   ServicesDefault:
@@ -165,6 +173,7 @@
     - OS::TripleO::Services::FluentdClient
     - OS::TripleO::Services::AuditD
     - OS::TripleO::Services::Collectd
+    - OS::TripleO::Services::MySQLClient
 
 - name: ObjectStorage
   disable_upgrade_deployment: True
@@ -183,6 +192,7 @@
     - OS::TripleO::Services::FluentdClient
     - OS::TripleO::Services::AuditD
     - OS::TripleO::Services::Collectd
+    - OS::TripleO::Services::MySQLClient
 
 - name: CephStorage
   ServicesDefault:
@@ -199,3 +209,4 @@
     - OS::TripleO::Services::FluentdClient
     - OS::TripleO::Services::AuditD
     - OS::TripleO::Services::Collectd
+    - OS::TripleO::Services::MySQLClient
