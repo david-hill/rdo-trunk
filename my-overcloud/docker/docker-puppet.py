@@ -87,11 +87,23 @@ configs = {}
 for service in (json_data or []):
     if service is None:
         continue
+    if isinstance(service, dict):
+        service = [
+            service.get('config_volume'),
+            service.get('puppet_tags'),
+            service.get('step_config'),
+            service.get('config_image'),
+            service.get('volumes', []),
+        ]
+
     config_volume = service[0] or ''
     puppet_tags = service[1] or ''
     manifest = service[2] or ''
     config_image = service[3] or ''
     volumes = service[4] if len(service) > 4 else []
+
+    if not manifest or not config_image:
+        continue
 
     print('---------')
     print('config_volume %s' % config_volume)

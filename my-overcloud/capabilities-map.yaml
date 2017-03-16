@@ -308,6 +308,11 @@ topics:
         description: >
           Enable various Neutron plugins and backends
         environments:
+          - file: environments/neutron-bgpvpn.yaml
+            title: Neutron BGPVPN Service Plugin
+            description: Enables Neutron BGPVPN Service Plugin
+            requires:
+              - overcloud-resource-registry-puppet.yaml
           - file: environments/neutron-ml2-bigswitch.yaml
             title: BigSwitch Extensions
             description: >
@@ -335,19 +340,9 @@ topics:
             description: Enables Neutron Nuage backend on the controller
             requires:
               - overcloud-resource-registry-puppet.yaml
-          - file: environments/neutron-opencontrail.yaml
-            title: OpenContrail Extensions
-            description: Enables OpenContrail extensions
-            requires:
-              - overcloud-resource-registry-puppet.yaml
           - file: environments/neutron-opendaylight.yaml
             title: OpenDaylight
             description: Enables OpenDaylight
-            requires:
-              - overcloud-resource-registry-puppet.yaml
-          - file: environments/neutron-opendaylight-l3.yaml
-            title: OpenDaylight with L3 DVR
-            description: Enables OpenDaylight with L3 DVR
             requires:
               - overcloud-resource-registry-puppet.yaml
           - file: environments/neutron-ovs-dpdk.yaml
@@ -544,14 +539,6 @@ topics:
             description:
             requires:
               - overcloud-resource-registry-puppet.yaml
-      - title: Manage Firewall
-        description:
-        environments:
-          - file: environments/manage-firewall.yaml
-            title: Manage Firewall
-            description:
-            requires:
-              - overcloud-resource-registry-puppet.yaml
 
   - title: Operational Tools
     description:
@@ -600,3 +587,8 @@ topics:
             description:
             requires:
               - overcloud-resource-registry-puppet.yaml
+      - title: Keystone CADF auditing
+        description: Enable CADF notifications in Keystone for auditing
+        environments:
+          - file: environments/cadf.yaml
+            title: Keystone CADF auditing

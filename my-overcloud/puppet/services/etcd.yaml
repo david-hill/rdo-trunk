@@ -36,7 +36,7 @@ outputs:
         etcd::etcd_name:
           str_replace:
             template:
-              '"%{::fqdn_$NETWORK}"'
+              "%{hiera('fqdn_$NETWORK')}"
             params:
               $NETWORK: {get_param: [ServiceNetMap, EtcdNetwork]}
         # NOTE: bind IP is found in Heat replacing the network name with the local node IP
@@ -56,3 +56,18 @@ outputs:
               - 2380
       step_config: |
         include ::tripleo::profile::base::etcd
+      upgrade_tasks:
+        - name: Check if etcd is deployed
+          command: systemctl is-enabled etcd
+          tags: step0,validation
+          ignore_errors: True
+          register: etcd_enabled
+        - name: "PreUpgrade step0,validation: Check if etcd is running"
+          shell: >
+            /usr/bin/systemctl show 'etcd' --property ActiveState |
+            grep '\bactive\b'
+          when: etcd_enabled.rc == 0
+          tags: step0,validation
+        - name: Stop etcd service
+          tags: step2
+          service: name=etcd state=stopped

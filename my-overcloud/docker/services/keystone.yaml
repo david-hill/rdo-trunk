@@ -49,20 +49,21 @@ outputs:
         map_merge:
           - get_attr: [KeystoneBase, role_data, config_settings]
           - apache::default_vhost: false
-      step_config:
+      step_config: &step_config
         list_join:
           - "\n"
           - - "['Keystone_user', 'Keystone_endpoint', 'Keystone_domain', 'Keystone_tenant', 'Keystone_user_role', 'Keystone_role', 'Keystone_service'].each |String $val| { noop_resource($val) }"
             - {get_attr: [KeystoneBase, role_data, step_config]}
       service_config_settings: {get_attr: [KeystoneBase, role_data, service_config_settings]}
       # BEGIN DOCKER SETTINGS
-      docker_image: &keystone_image
-        list_join:
-          - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerKeystoneImage} ]
-      puppet_tags: keystone_config
-      config_volume: keystone
-      config_image: *keystone_image
+      puppet_config:
+        config_volume: keystone
+        puppet_tags: keystone_config
+        step_config: *step_config
+        config_image: &keystone_image
+          list_join:
+            - '/'
+            - [ {get_param: DockerNamespace}, {get_param: DockerKeystoneImage} ]
       kolla_config:
          /var/lib/kolla/config_files/keystone.json:
            command: /usr/sbin/httpd -DFOREGROUND
@@ -109,7 +110,7 @@ outputs:
             start_order: 0
             image: *keystone_image
             user: root
-            command: ['/bin/bash', '-c', 'mkdir /var/log/httpd && mkdir /var/log/keystone && chown keystone:keystone /var/log/keystone']
+            command: ['/bin/bash', '-c', 'mkdir -p /var/log/httpd && mkdir -p /var/log/keystone && chown keystone:keystone /var/log/keystone']
             volumes:
               - logs:/var/log
           keystone_db_sync:
@@ -145,9 +146,14 @@ outputs:
       docker_puppet_tasks:
         # Keystone endpoint creation occurs only on single node
         step_3:
-          - 'keystone_init_tasks'
-          - 'keystone_config,keystone_domain_config,keystone_endpoint,keystone_identity_provider,keystone_paste_ini,keystone_role,keystone_service,keystone_tenant,keystone_user,keystone_user_role,keystone_domain'
-          - 'include ::tripleo::profile::base::keystone'
-          - list_join:
+          config_volume: 'keystone_init_tasks'
+          puppet_tags: 'keystone_config,keystone_domain_config,keystone_endpoint,keystone_identity_provider,keystone_paste_ini,keystone_role,keystone_service,keystone_tenant,keystone_user,keystone_user_role,keystone_domain'
+          step_config: 'include ::tripleo::profile::base::keystone'
+          config_image:
+            list_join:
             - '/'
             - [ {get_param: DockerNamespace}, {get_param: DockerKeystoneImage} ]
+      upgrade_tasks:
+        - name: Stop and disable keystone service (running under httpd)
+          tags: step2
+          service: name=httpd state=stopped enabled=no

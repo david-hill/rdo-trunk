@@ -54,20 +54,20 @@ outputs:
                 pid-file: /var/lib/mysql/mariadb.pid
               mysqld_safe:
                 pid-file: /var/lib/mysql/mariadb.pid
-      step_config:
+      step_config: &step_config
         list_join:
           - "\n"
           - - "['Mysql_datadir', 'Mysql_user', 'Mysql_database', 'Mysql_grant', 'Mysql_plugin'].each |String $val| { noop_resource($val) }"
             - {get_attr: [MysqlPuppetBase, role_data, step_config]}
-      upgrade_tasks: {get_attr: [MysqlPuppetBase, role_data, upgrade_tasks]}
       # BEGIN DOCKER SETTINGS #
-      docker_image: &mysql_image
-        list_join:
-          - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerMysqlImage} ]
-      puppet_tags: file # set this even though file is the default
-      config_volume: mysql
-      config_image: *mysql_image
+      puppet_config:
+        config_volume: mysql
+        puppet_tags: file # set this even though file is the default
+        step_config: *step_config
+        config_image: &mysql_image
+          list_join:
+            - '/'
+            - [ {get_param: DockerNamespace}, {get_param: DockerMysqlImage} ]
       kolla_config:
         /var/lib/kolla/config_files/mysql.json:
           command: /usr/bin/mysqld_safe
@@ -120,11 +120,17 @@ outputs:
       docker_puppet_tasks:
         # MySQL database initialization occurs only on single node
         step_2:
-          - 'mysql_init_tasks'
-          - 'mysql_database,mysql_grant,mysql_user'
-          - 'include ::tripleo::profile::base::database::mysql'
-          - list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerMysqlImage} ]
-          - - "mariadb:/var/lib/mysql/:ro"
+          config_volume: 'mysql_init_tasks'
+          puppet_tags: 'mysql_database,mysql_grant,mysql_user'
+          step_config: 'include ::tripleo::profile::base::database::mysql'
+          config_image:
+            list_join:
+              - '/'
+              - [ {get_param: DockerNamespace}, {get_param: DockerMysqlImage} ]
+          volumes:
+            - "mariadb:/var/lib/mysql/:ro"
             - "/var/lib/config-data/mysql/root:/root:ro" #provides .my.cnf
+      upgrade_tasks:
+        - name: Stop and disable mysql service
+          tags: step2
+          service: name=mariadb state=stopped enabled=no

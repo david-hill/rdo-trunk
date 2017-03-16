@@ -49,19 +49,18 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [NeutronBase, role_data, config_settings]
-      step_config: {get_attr: [NeutronBase, role_data, step_config]}
+      step_config: &step_config
+        get_attr: [NeutronBase, role_data, step_config]
       service_config_settings: {get_attr: [NeutronBase, role_data, service_config_settings]}
       # BEGIN DOCKER SETTINGS
-      docker_image: &neutron_dhcp_image
-        list_join:
-          - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerNeutronApiImage} ]
-      puppet_tags: neutron_config,neutron_dhcp_agent_config
-      config_volume: neutron
-      config_image:
-        list_join:
-          - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerNeutronConfigImage} ]
+      puppet_config:
+        config_volume: neutron
+        puppet_tags: neutron_config,neutron_dhcp_agent_config
+        step_config: *step_config
+        config_image:
+          list_join:
+            - '/'
+            - [ {get_param: DockerNamespace}, {get_param: DockerNeutronConfigImage} ]
       kolla_config:
          /var/lib/kolla/config_files/neutron_dhcp.json:
            command: /usr/bin/neutron-dhcp-agent --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/dhcp_agent.ini --log-file /var/log/neutron/dhcp-agent.log
@@ -77,7 +76,10 @@ outputs:
       docker_config:
         step_4:
           neutron_dhcp:
-            image: *neutron_dhcp_image
+            image: &neutron_dhcp_image
+              list_join:
+                - '/'
+                - [ {get_param: DockerNamespace}, {get_param: DockerNeutronApiImage} ]
             net: host
             pid: host
             privileged: true
@@ -91,3 +93,7 @@ outputs:
               - /run/:/run
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+      upgrade_tasks:
+        - name: Stop and disable neutron_dhcp service
+          tags: step2
+          service: name=neutron-dhcp-agent state=stopped enabled=no

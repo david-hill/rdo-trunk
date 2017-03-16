@@ -49,19 +49,18 @@ outputs:
         map_merge:
           - get_attr: [NovaApiBase, role_data, config_settings]
           - apache::default_vhost: false
-      step_config: {get_attr: [NovaApiBase, role_data, step_config]}
+      step_config: &step_config
+        get_attr: [NovaApiBase, role_data, step_config]
       service_config_settings: {get_attr: [NovaApiBase, role_data, service_config_settings]}
       # BEGIN DOCKER SETTINGS
-      docker_image: &nova_api_image
-        list_join:
+      puppet_config:
+        config_volume: nova
+        puppet_tags: nova_config
+        step_config: *step_config
+        config_image:
+          list_join:
           - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerNovaApiImage} ]
-      puppet_tags: nova_config
-      config_volume: nova
-      config_image:
-        list_join:
-        - '/'
-        - [ {get_param: DockerNamespace}, {get_param: DockerNovaBaseImage} ]
+          - [ {get_param: DockerNamespace}, {get_param: DockerNovaBaseImage} ]
       kolla_config:
          /var/lib/kolla/config_files/nova_api.json:
            command: /usr/bin/nova-api
@@ -74,7 +73,10 @@ outputs:
         step_3:
           nova_api_db_sync:
             start_order: 1
-            image: *nova_api_image
+            image: &nova_api_image
+              list_join:
+                - '/'
+                - [ {get_param: DockerNamespace}, {get_param: DockerNovaApiImage} ]
             net: host
             detach: false
             volumes: &nova_api_volumes
@@ -132,3 +134,17 @@ outputs:
               - /etc/localtime:/etc/localtime:ro
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+          nova_api_discover_hosts:
+            start_order: 3
+            image: *nova_api_image
+            net: host
+            detach: false
+            volumes: *nova_api_volumes
+            command:
+              - '/usr/bin/nova-manage'
+              - 'cell_v2'
+              - 'discover_hosts'
+      upgrade_tasks:
+        - name: Stop and disable nova_api service
+          tags: step2
+          service: name=openstack-nova-api state=stopped enabled=no

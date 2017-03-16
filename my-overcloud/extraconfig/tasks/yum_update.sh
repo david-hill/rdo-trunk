@@ -47,7 +47,10 @@ if [[ "$list_updates" == "" ]]; then
     exit 0
 fi
 
-pacemaker_status=$(systemctl is-active pacemaker || :)
+pacemaker_status=""
+if hiera -c /etc/puppet/hiera.yaml service_names | grep -q pacemaker; then
+    pacemaker_status=$(systemctl is-active pacemaker)
+fi
 
 # Fix the redis/rabbit resource start/stop timeouts. See https://bugs.launchpad.net/tripleo/+bug/1633455
 # and https://bugs.launchpad.net/tripleo/+bug/1634851
@@ -66,9 +69,6 @@ if [[ "$pacemaker_status" == "active" && \
         pcs resource update redis op stop timeout=200s
     fi
 fi
-
-# Special-case OVS for https://bugs.launchpad.net/tripleo/+bug/1635205
-special_case_ovs_upgrade_if_needed
 
 if [[ "$pacemaker_status" == "active" ]] ; then
     echo "Pacemaker running, stopping cluster node and doing full package update"

@@ -42,16 +42,18 @@ outputs:
     value:
       service_name: {get_attr: [MemcachedBase, role_data, service_name]}
       config_settings: {get_attr: [MemcachedBase, role_data, config_settings]}
-      step_config: {get_attr: [MemcachedBase, role_data, step_config]}
+      step_config: &step_config
+        get_attr: [MemcachedBase, role_data, step_config]
       service_config_settings: {get_attr: [MemcachedBase, role_data, service_config_settings]}
       # BEGIN DOCKER SETTINGS
-      docker_image: &memcached_image
-        list_join:
-          - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerMemcachedImage} ]
-      puppet_tags: 'file'
-      config_volume: 'memcached'
-      config_image: *memcached_image
+      puppet_config:
+        config_volume: 'memcached'
+        puppet_tags: 'file'
+        step_config: *step_config
+        config_image: &memcached_image
+          list_join:
+            - '/'
+            - [ {get_param: DockerNamespace}, {get_param: DockerMemcachedImage} ]
       kolla_config: {}
       docker_config:
         step_1:
@@ -67,3 +69,7 @@ outputs:
             command: ['/bin/bash', '-c', 'source /etc/sysconfig/memcached; /usr/bin/memcached -p ${PORT} -u ${USER} -m ${CACHESIZE} -c ${MAXCONN} $OPTIONS']
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+      upgrade_tasks:
+        - name: Stop and disable memcached service
+          tags: step2
+          service: name=memcached state=stopped enabled=no

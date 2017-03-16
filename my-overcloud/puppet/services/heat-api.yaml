@@ -38,8 +38,23 @@ parameters:
     default:
       tag: openstack.heat.api
       path: /var/log/heat/heat-api.log
+  EnableInternalTLS:
+    type: boolean
+    default: false
+
+conditions:
+  heat_workers_zero: {equals : [{get_param: HeatWorkers}, 0]}
 
 resources:
+
+  ApacheServiceBase:
+    type: ./apache.yaml
+    properties:
+      ServiceNetMap: {get_param: ServiceNetMap}
+      DefaultPasswords: {get_param: DefaultPasswords}
+      EndpointMap: {get_param: EndpointMap}
+      EnableInternalTLS: {get_param: EnableInternalTLS}
+
   HeatBase:
     type: ./heat-base.yaml
     properties:
@@ -59,19 +74,32 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [HeatBase, role_data, config_settings]
-          - heat::api::workers: {get_param: HeatWorkers}
-            tripleo.heat_api.firewall_rules:
+          - get_attr: [ApacheServiceBase, role_data, config_settings]
+          - tripleo.heat_api.firewall_rules:
               '125 heat_api':
                 dport:
                   - 8004
                   - 13004
-            # NOTE: bind IP is found in Heat replacing the network name with the
-            # local node IP for the given network; replacement examples
-            # (eg. for internal_api):
+            heat::api::bind_host: {get_param: [ServiceNetMap, HeatApiNetwork]}
+            heat::wsgi::apache_api::ssl: {get_param: EnableInternalTLS}
+            heat::api::service_name: 'httpd'
+            # NOTE: bind IP is found in Heat replacing the network name with the local node IP
+            # for the given network; replacement examples (eg. for internal_api):
             # internal_api -> IP
             # internal_api_uri -> [IP]
             # internal_api_subnet - > IP/CIDR
-            heat::api::bind_host: {get_param: [ServiceNetMap, HeatApiNetwork]}
+            heat::wsgi::apache_api::bind_host: {get_param: [ServiceNetMap, HeatApiNetwork]}
+            heat::wsgi::apache_api::servername:
+              str_replace:
+                template:
+                  "%{hiera('fqdn_$NETWORK')}"
+                params:
+                  $NETWORK: {get_param: [ServiceNetMap, HeatApiNetwork]}
+          -
+            if:
+            - heat_workers_zero
+            - {}
+            - heat::wsgi::apache_api::workers: {get_param: HeatWorkers}
       step_config: |
         include ::tripleo::profile::base::heat::api
       service_config_settings:
@@ -85,9 +113,25 @@ outputs:
               heat::keystone::auth::password: {get_param: HeatPassword}
               heat::keystone::auth::region: {get_param: KeystoneRegion}
       upgrade_tasks:
+        - name: Check is heat_api is deployed
+          command: systemctl is-enabled openstack-heat-api
+          tags: common
+          ignore_errors: True
+          register: heat_api_enabled
         - name: "PreUpgrade step0,validation: Check service openstack-heat-api is running"
           shell: /usr/bin/systemctl show 'openstack-heat-api' --property ActiveState | grep '\bactive\b'
+          when: heat_api_enabled.rc == 0
           tags: step0,validation
-        - name: Stop heat_api service
-          tags: step2
-          service: name=openstack-heat-api state=stopped
+        - name: check for heat_api running under apache (post upgrade)
+          tags: step1
+          shell: "httpd -t -D DUMP_VHOSTS | grep -q heat_api_wsgi"
+          register: heat_api_apache
+          ignore_errors: true
+        - name: Stop heat_api service (running under httpd)
+          tags: step1
+          service: name=httpd state=stopped
+          when: heat_api_apache.rc == 0
+        - name: Stop and disable heat_api service (pre-upgrade not under httpd)
+          tags: step1
+          when: heat_api_enabled.rc == 0
+          service: name=openstack-heat-api state=stopped enabled=no

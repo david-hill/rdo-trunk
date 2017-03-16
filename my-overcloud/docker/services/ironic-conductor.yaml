@@ -55,19 +55,18 @@ outputs:
           - ironic::pxe::tftp_root: /var/lib/ironic/tftpboot
           - ironic::pxe::http_root: /var/lib/ironic/httpboot
           - ironic::conductor::http_root: /var/lib/ironic/httpboot
-      step_config: {get_attr: [IronicConductorBase, role_data, step_config]}
+      step_config: &step_config
+        get_attr: [IronicConductorBase, role_data, step_config]
       service_config_settings: {get_attr: [IronicConductorBase, role_data, service_config_settings]}
       # BEGIN DOCKER SETTINGS
-      docker_image: &ironic_image
-        list_join:
-          - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerIronicConductorImage} ]
-      puppet_tags: ironic_config
-      config_volume: ironic
-      config_image:
-        list_join:
-          - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerIronicConfigImage} ]
+      puppet_config:
+        config_volume: ironic
+        puppet_tags: ironic_config
+        step_config: *step_config
+        config_image:
+          list_join:
+            - '/'
+            - [ {get_param: DockerNamespace}, {get_param: DockerIronicConfigImage} ]
       kolla_config:
          /var/lib/kolla/config_files/ironic_conductor.json:
            command: /usr/bin/ironic-conductor
@@ -86,7 +85,10 @@ outputs:
       docker_config:
         step_4:
           ironic-init-dirs:
-            image: *ironic_image
+            image: &ironic_image
+              list_join:
+                - '/'
+                - [ {get_param: DockerNamespace}, {get_param: DockerIronicConductorImage} ]
             user: root
             command: ['/bin/bash', '-c', 'mkdir /var/lib/ironic/httpboot && mkdir /var/lib/ironic/tftpboot']
             volumes:
@@ -109,3 +111,7 @@ outputs:
               - ironic:/var/lib/ironic
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+      upgrade_tasks:
+        - name: Stop and disable ironic_conductor service
+          tags: step2
+          service: name=openstack-ironic-conductor state=stopped enabled=no

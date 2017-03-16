@@ -74,7 +74,7 @@ outputs:
         map_merge:
           - get_attr: [ApacheServiceBase, role_data, config_settings]
           - barbican::keystone::authtoken::password: {get_param: BarbicanPassword}
-            barbican::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri]}
+            barbican::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
             barbican::keystone::authtoken::auth_url: { get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
             barbican::keystone::authtoken::project_name: 'service'
             barbican::api::host_href: {get_param: [EndpointMap, BarbicanPublic, uri]}
@@ -135,17 +135,27 @@ outputs:
           nova::compute::barbican_endpoint:
             get_param: [EndpointMap, BarbicanInternal, uri]
           nova::compute::barbican_auth_endpoint:
-            get_param: [EndpointMap, KeystoneV3Internal, uri_no_suffix]
+            get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]
         cinder_api:
           cinder::api::keymgr_api_class: >
             castellan.key_manager.barbican_key_manager.BarbicanKeyManager
           cinder::api::keymgr_encryption_api_url:
             get_param: [EndpointMap, BarbicanInternal, uri]
           cinder::api::keymgr_encryption_auth_url:
-            get_param: [EndpointMap, KeystoneV3Internal, uri_no_suffix]
+            get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]
       metadata_settings:
         get_attr: [ApacheServiceBase, role_data, metadata_settings]
       upgrade_tasks:
+        - name: Check if barbican_api is deployed
+          command: systemctl is-enabled openstack-barbican-api
+          tags: common
+          ignore_errors: True
+          register: barbican_api_enabled
         - name: "PreUpgrade step0,validation: Check service openstack-barbican-api is running"
           shell: /usr/bin/systemctl show 'openstack-barbican-api' --property ActiveState | grep '\bactive\b'
+          when: barbican_api_enabled.rc == 0
           tags: step0,validation
+        - name: Install openstack-barbican-api package if it was disabled
+          tags: step3
+          yum: name=openstack-barbican-api state=latest
+          when: barbican_api_enabled.rc != 0

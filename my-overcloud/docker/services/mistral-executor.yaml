@@ -49,19 +49,18 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [MistralBase, role_data, config_settings]
-      step_config: {get_attr: [MistralBase, role_data, step_config]}
+      step_config: &step_config
+        get_attr: [MistralBase, role_data, step_config]
       service_config_settings: {get_attr: [MistralBase, role_data, service_config_settings]}
       # BEGIN DOCKER SETTINGS
-      docker_image: &mistral_executor_image
-        list_join:
-          - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerMistralExecutorImage} ]
-      puppet_tags: mistral_config
-      config_volume: mistral
-      config_image:
-        list_join:
-          - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerMistralConfigImage} ]
+      puppet_config:
+        config_volume: mistral
+        puppet_tags: mistral_config
+        step_config: *step_config
+        config_image:
+          list_join:
+            - '/'
+            - [ {get_param: DockerNamespace}, {get_param: DockerMistralConfigImage} ]
       kolla_config:
          /var/lib/kolla/config_files/mistral_executor.json:
            command: /usr/bin/mistral-server --config-file=/etc/mistral/mistral.conf --log-file=/var/log/mistral/executor.log --server=executor
@@ -73,7 +72,10 @@ outputs:
       docker_config:
         step_4:
           mistral_executor:
-            image: *mistral_executor_image
+            image: &mistral_executor_image
+              list_join:
+                - '/'
+                - [ {get_param: DockerNamespace}, {get_param: DockerMistralExecutorImage} ]
             net: host
             privileged: false
             restart: always
@@ -89,3 +91,7 @@ outputs:
               - /var/lib/config-data/nova/etc/nova:/etc/nova:ro
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+      upgrade_tasks:
+        - name: Stop and disable mistral_executor service
+          tags: step2
+          service: name=openstack-mistral-executor state=stopped enabled=no
