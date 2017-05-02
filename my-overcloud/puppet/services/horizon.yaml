@@ -40,6 +40,10 @@ parameters:
     type: string
     hidden: true
     default: ''
+  HorizonSecureCookies:
+    description: Set CSRF_COOKIE_SECURE / SESSION_COOKIE_SECURE in Horizon
+    type: boolean
+    default: true
   MemcachedIPv6:
     default: false
     description: Enable IPv6 features in Memcached.
@@ -78,7 +82,7 @@ outputs:
             access_log_format: '%a %l %u %t \"%r\" %>s %b \"%%{}{Referer}i\" \"%%{}{User-Agent}i\"'
             options: ['FollowSymLinks','MultiViews']
           horizon::bind_address: {get_param: [ServiceNetMap, HorizonNetwork]}
-          horizon::keystone_url: {get_param: [EndpointMap, KeystoneInternal, uri]}
+          horizon::keystone_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
           horizon::password_validator: {get_param: [HorizonPasswordValidator]}
           horizon::password_validator_help: {get_param: [HorizonPasswordValidatorHelp]}
           horizon::secret_key:
@@ -88,6 +92,7 @@ outputs:
                 passwords:
                   - {get_param: HorizonSecret}
                   - {get_param: [DefaultPasswords, horizon_secret]}
+          horizon::secure_cookies: {get_param: [HorizonSecureCookies]}
           memcached_ipv6: {get_param: MemcachedIPv6}
         -
           if:

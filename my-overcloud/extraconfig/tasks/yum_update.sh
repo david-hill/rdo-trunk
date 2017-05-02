@@ -40,9 +40,17 @@ touch "$timestamp_file"
 
 command_arguments=${command_arguments:-}
 
-list_updates=$(yum list updates)
+# yum check-update exits 100 if updates are available
+set +e
+check_update=$(yum check-update 2>&1)
+check_update_exit=$?
+set -e
 
-if [[ "$list_updates" == "" ]]; then
+if [[ "$check_update_exit" == "1" ]]; then
+    echo "Failed to check for package updates"
+    echo "$check_update"
+    exit 1
+elif [[ "$check_update_exit" != "100" ]]; then
     echo "No packages require updating"
     exit 0
 fi
@@ -69,6 +77,9 @@ if [[ "$pacemaker_status" == "active" && \
         pcs resource update redis op stop timeout=200s
     fi
 fi
+
+# special case https://bugs.launchpad.net/tripleo/+bug/1635205 +bug/1669714
+special_case_ovs_upgrade_if_needed
 
 if [[ "$pacemaker_status" == "active" ]] ; then
     echo "Pacemaker running, stopping cluster node and doing full package update"
@@ -97,17 +108,6 @@ return_code=$?
 echo "$result"
 echo "yum return code: $return_code"
 
-# Writes any changes caused by alterations to os-net-config and bounces the
-# interfaces *before* restarting the cluster.
-os-net-config -c /etc/os-net-config/config.json -v --detailed-exit-codes
-RETVAL=$?
-if [[ $RETVAL == 2 ]]; then
-    echo "os-net-config: interface configuration files updated successfully"
-elif [[ $RETVAL != 0 ]]; then
-    echo "ERROR: os-net-config configuration failed"
-    exit $RETVAL
-fi
-
 if [[ "$pacemaker_status" == "active" ]] ; then
     echo "Starting cluster node"
     pcs cluster start
@@ -124,15 +124,19 @@ if [[ "$pacemaker_status" == "active" ]] ; then
         fi
     done
 
-    tstart=$(date +%s)
-    while ! clustercheck; do
-        sleep 5
-        tnow=$(date +%s)
-        if (( tnow-tstart > galera_sync_timeout )) ; then
-            echo "ERROR galera sync timed out"
-            exit 1
-        fi
-    done
+    RETVAL=$( pcs resource show galera-master | grep wsrep_cluster_address | grep -q `crm_node -n` ; echo $? )
+
+    if [[ $RETVAL -eq 0 && -e /etc/sysconfig/clustercheck ]]; then
+        tstart=$(date +%s)
+        while ! clustercheck; do
+            sleep 5
+            tnow=$(date +%s)
+            if (( tnow-tstart > galera_sync_timeout )) ; then
+                echo "ERROR galera sync timed out"
+                exit 1
+            fi
+        done
+    fi
 
     echo "Waiting for pacemaker cluster to settle"
     if ! timeout -k 10 $cluster_settle_timeout crm_resource --wait; then

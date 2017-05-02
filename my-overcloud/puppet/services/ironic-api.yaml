@@ -29,6 +29,12 @@ parameters:
     type: string
     default: 'regionOne'
     description: Keystone region for endpoint
+  IronicApiPolicies:
+    description: |
+      A hash of policies to configure for Ironic API.
+      e.g. { ironic-context_is_admin: { key: context_is_admin, value: 'role:admin' } }
+    default: {}
+    type: json
 
 resources:
   IronicBase:
@@ -49,8 +55,10 @@ outputs:
           - get_attr: [IronicBase, role_data, config_settings]
           - ironic::api::authtoken::password: {get_param: IronicPassword}
             ironic::api::authtoken::project_name: 'service'
+            ironic::api::authtoken::user_domain_name: 'Default'
+            ironic::api::authtoken::project_domain_name: 'Default'
             ironic::api::authtoken::username: 'ironic'
-            ironic::api::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri] }
+            ironic::api::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix] }
             ironic::api::authtoken::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
             # NOTE: bind IP is found in Heat replacing the network name with the
             # local node IP for the given network; replacement examples
@@ -62,6 +70,7 @@ outputs:
             ironic::api::port: {get_param: [EndpointMap, IronicInternal, port]}
             # This is used to build links in responses
             ironic::api::public_endpoint: {get_param: [EndpointMap, IronicPublic, uri_no_suffix]}
+            ironic::policy::policies: {get_param: IronicApiPolicies}
             tripleo.ironic_api.firewall_rules:
               '133 ironic api':
                 dport:

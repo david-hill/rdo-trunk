@@ -12,7 +12,7 @@ parameters:
     description: image
     default: 'centos-binary-nova-compute-ironic:latest'
     type: string
-  DockerNovaBaseImage:
+  DockerNovaConfigImage:
     description: image
     default: 'centos-binary-nova-base:latest'
     type: string
@@ -33,6 +33,8 @@ parameters:
 
 resources:
 
+  ContainersCommon:
+    type: ./containers-common.yaml
 
   NovaIronicBase:
     type: ../../puppet/services/nova-ironic.yaml
@@ -54,19 +56,10 @@ outputs:
         config_image:
           list_join:
           - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerNovaBaseImage} ]
+          - [ {get_param: DockerNamespace}, {get_param: DockerNovaConfigImage} ]
       kolla_config:
         /var/lib/kolla/config_files/nova_ironic.json:
            command: /usr/bin/nova-compute --config-file /etc/nova/nova.conf --config-file /etc/nova/rootwrap.conf
-           config_files:
-           - dest: /etc/nova/nova.conf
-             owner: nova
-             perm: '0600'
-             source: /var/lib/kolla/config_files/src/etc/nova/nova.conf
-           - dest: /etc/nova/rootwrap.conf
-             owner: nova
-             perm: '0600'
-             source: /var/lib/kolla/config_files/src/etc/nova/rootwrap.conf
       docker_config:
         step_5:
           novacompute:
@@ -79,12 +72,20 @@ outputs:
             user: root
             restart: always
             volumes:
-              - /var/lib/kolla/config_files/nova_ironic.json:/var/lib/kolla/config_files/config.json:ro
-              - /var/lib/config-data/nova:/var/lib/kolla/config_files/src:ro
-              - /etc/localtime:/etc/localtime:ro
-              - /run:/run
-              - /dev:/dev
-              - /etc/iscsi:/etc/iscsi
-              - nova_compute:/var/lib/nova/
+              yaql:
+                expression: $.data.common.concat($.data.service)
+                data:
+                  common: {get_attr: [ContainersCommon, volumes]}
+                  service:
+                    - /var/lib/kolla/config_files/nova_ironic.json:/var/lib/kolla/config_files/config.json:ro
+                    - /var/lib/config-data/nova/etc/nova/:/etc/nova/:ro
+                    - /run:/run
+                    - /dev:/dev
+                    - /etc/iscsi:/etc/iscsi
+                    - /var/lib/nova/:/var/lib/nova
             environment:
              - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+      upgrade_tasks:
+        - name: Stop and disable nova-compute service
+          tags: step2
+          service: name=openstack-nova-compute state=stopped enabled=no

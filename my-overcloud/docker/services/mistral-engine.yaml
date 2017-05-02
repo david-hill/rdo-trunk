@@ -34,6 +34,9 @@ parameters:
 
 resources:
 
+  ContainersCommon:
+    type: ./containers-common.yaml
+
   MistralBase:
     type: ../../puppet/services/mistral-engine.yaml
     properties:
@@ -62,17 +65,12 @@ outputs:
             - '/'
             - [ {get_param: DockerNamespace}, {get_param: DockerMistralConfigImage} ]
       kolla_config:
-         /var/lib/kolla/config_files/mistral_engine.json:
-           command: /usr/bin/mistral-server --config-file=/etc/mistral/mistral.conf --log-file=/var/log/mistral/engine.log --server=engine
-           config_files:
-           - dest: /etc/mistral/mistral.conf
-             owner: mistral
-             perm: '0640'
-             source: /var/lib/kolla/config_files/src/etc/mistral/mistral.conf
+        /var/lib/kolla/config_files/mistral_engine.json:
+          command: /usr/bin/mistral-server --config-file=/etc/mistral/mistral.conf --log-file=/var/log/mistral/engine.log --server=engine
       docker_config:
         step_4:
           mistral_engine:
-            image: &mistral_engine_image
+            image:
               list_join:
                 - '/'
                 - [ {get_param: DockerNamespace}, {get_param: DockerMistralEngineImage} ]
@@ -80,15 +78,17 @@ outputs:
             privileged: false
             restart: always
             volumes:
-              - /run:/run
-              - /var/lib/kolla/config_files/mistral_engine.json:/var/lib/kolla/config_files/config.json:ro
-              - /var/lib/config-data/mistral/:/var/lib/kolla/config_files/src:ro
-              - /etc/hosts:/etc/hosts:ro
-              - /etc/localtime:/etc/localtime:ro
+              yaql:
+                expression: $.data.common.concat($.data.service)
+                data:
+                  common: {get_attr: [ContainersCommon, volumes]}
+                  service:
+                    - /run:/run
+                    - /var/lib/kolla/config_files/mistral_engine.json:/var/lib/kolla/config_files/config.json:ro
+                    - /var/lib/config-data/mistral/etc/mistral/:/etc/mistral/:ro
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
       upgrade_tasks:
         - name: Stop and disable mistral_engine service
           tags: step2
           service: name=openstack-mistral-engine state=stopped enabled=no
-

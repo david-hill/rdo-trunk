@@ -4,7 +4,6 @@ resource_registry:
   OS::TripleO::Services::CephMon: ../../puppet/services/ceph-mon.yaml
   OS::TripleO::Services::CephOSD: ../../puppet/services/ceph-osd.yaml
   OS::TripleO::Services::CephClient: ../../puppet/services/ceph-client.yaml
-  OS::TripleO::Services::PankoApi: ../../puppet/services/panko-api.yaml
   OS::TripleO::Services::Collectd: ../../puppet/services/metrics/collectd.yaml
   OS::TripleO::Services::Tacker: ../../puppet/services/tacker.yaml
   OS::TripleO::Services::Congress: ../../puppet/services/congress.yaml
@@ -19,9 +18,12 @@ resource_registry:
   OS::TripleO::Tasks::ControllerPrePuppet: ../../extraconfig/tasks/pre_puppet_pacemaker.yaml
   OS::TripleO::Tasks::ControllerPostPuppet: ../../extraconfig/tasks/post_puppet_pacemaker.yaml
   OS::TripleO::Tasks::ControllerPostPuppetRestart: ../../extraconfig/tasks/post_puppet_pacemaker_restart.yaml
+  OS::TripleO::Services::FluentdClient: /usr/share/openstack-tripleo-heat-templates/puppet/services/logging/fluentd-client.yaml
+  OS::TripleO::Services::SensuClient: /usr/share/openstack-tripleo-heat-templates/puppet/services/monitoring/sensu-client.yaml
 
 parameter_defaults:
   ControllerServices:
+    - OS::TripleO::Services::Docker
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::Keystone
     - OS::TripleO::Services::GlanceApi
@@ -50,6 +52,7 @@ parameter_defaults:
     - OS::TripleO::Services::Ntp
     - OS::TripleO::Services::Snmp
     - OS::TripleO::Services::Sshd
+    - OS::TripleO::Services::Securetty
     - OS::TripleO::Services::Timezone
     - OS::TripleO::Services::NovaCompute
     - OS::TripleO::Services::NovaLibvirt
@@ -63,6 +66,7 @@ parameter_defaults:
     - OS::TripleO::Services::CeilometerCollector
     - OS::TripleO::Services::CeilometerExpirer
     - OS::TripleO::Services::CeilometerAgentCentral
+    - OS::TripleO::Services::CeilometerAgentIpmi
     - OS::TripleO::Services::CeilometerAgentNotification
     - OS::TripleO::Services::GnocchiApi
     - OS::TripleO::Services::GnocchiMetricd
@@ -80,6 +84,9 @@ parameter_defaults:
     - OS::TripleO::Services::Congress
     - OS::TripleO::Services::TripleoPackages
     - OS::TripleO::Services::TripleoFirewall
+    - OS::TripleO::Services::FluentdClient
+    - OS::TripleO::Services::SensuClient
+
   ControllerExtraConfig:
     nova::compute::libvirt::services::libvirt_virt_type: qemu
     nova::compute::libvirt::libvirt_virt_type: qemu
@@ -113,3 +120,17 @@ parameter_defaults:
     ******************************************************************
   CollectdExtraPlugins:
     - rrdtool
+  LoggingServers:
+    - host: 127.0.0.1
+      port: 24224
+  MonitoringRabbitHost: 127.0.0.1
+  MonitoringRabbitPort: 5676
+  MonitoringRabbitPassword: sensu
+  TtyValues:
+    - console
+    - tty1
+    - tty2
+    - tty3
+    - tty4
+    - tty5
+    - tty6

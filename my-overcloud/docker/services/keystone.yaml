@@ -30,8 +30,20 @@ parameters:
     description: The password for the keystone admin account, used for monitoring, querying neutron etc.
     type: string
     hidden: true
+  KeystoneTokenProvider:
+    description: The keystone token format
+    type: string
+    default: 'fernet'
+    constraints:
+      - allowed_values: ['uuid', 'fernet']
+  EnableInternalTLS:
+    type: boolean
+    default: false
 
 resources:
+
+  ContainersCommon:
+    type: ./containers-common.yaml
 
   KeystoneBase:
     type: ../../puppet/services/keystone.yaml
@@ -39,6 +51,10 @@ resources:
       EndpointMap: {get_param: EndpointMap}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
+
+conditions:
+
+  internal_tls_enabled: {equals: [{get_param: EnableInternalTLS}, true]}
 
 outputs:
   role_data:
@@ -65,45 +81,8 @@ outputs:
             - '/'
             - [ {get_param: DockerNamespace}, {get_param: DockerKeystoneImage} ]
       kolla_config:
-         /var/lib/kolla/config_files/keystone.json:
-           command: /usr/sbin/httpd -DFOREGROUND
-           config_files:
-           - dest: /etc/keystone/keystone.conf
-             owner: keystone
-             perm: '0640'
-             source: /var/lib/kolla/config_files/src/etc/keystone/keystone.conf
-           - dest: /etc/keystone/credential-keys/0
-             owner: keystone
-             perm: '0600'
-             source: /var/lib/kolla/config_files/src/etc/keystone/credential-keys/0
-           - dest: /etc/keystone/credential-keys/1
-             owner: keystone
-             perm: '0600'
-             source: /var/lib/kolla/config_files/src/etc/keystone/credential-keys/1
-           - dest: /etc/httpd/conf.d/10-keystone_wsgi_admin.conf
-             owner: root
-             perm: '0644'
-             source: /var/lib/kolla/config_files/src/etc/httpd/conf.d/10-keystone_wsgi_admin.conf
-           - dest: /etc/httpd/conf.d/10-keystone_wsgi_main.conf
-             owner: root
-             perm: '0644'
-             source: /var/lib/kolla/config_files/src/etc/httpd/conf.d/10-keystone_wsgi_main.conf
-           - dest: /etc/httpd/conf/httpd.conf
-             owner: root
-             perm: '0644'
-             source: /var/lib/kolla/config_files/src/etc/httpd/conf/httpd.conf
-           - dest: /etc/httpd/conf/ports.conf
-             owner: root
-             perm: '0644'
-             source: /var/lib/kolla/config_files/src/etc/httpd/conf/ports.conf
-           - dest: /var/www/cgi-bin/keystone/keystone-admin
-             owner: keystone
-             perm: '0644'
-             source: /var/lib/kolla/config_files/src/var/www/cgi-bin/keystone/keystone-admin
-           - dest: /var/www/cgi-bin/keystone/keystone-public
-             owner: keystone
-             perm: '0644'
-             source: /var/lib/kolla/config_files/src/var/www/cgi-bin/keystone/keystone-public
+        /var/lib/kolla/config_files/keystone.json:
+          command: /usr/sbin/httpd -DFOREGROUND
       docker_config:
         step_3:
           keystone-init-log:
@@ -120,12 +99,26 @@ outputs:
             privileged: false
             detach: false
             volumes: &keystone_volumes
-              - /var/lib/kolla/config_files/keystone.json:/var/lib/kolla/config_files/config.json:ro
-              - /var/lib/config-data/keystone/:/var/lib/kolla/config_files/src:ro
-              - /var/lib/config-data/keystone/etc/httpd/conf.modules.d:/etc/httpd/conf.modules.d:ro
-              - /etc/hosts:/etc/hosts:ro
-              - /etc/localtime:/etc/localtime:ro
-              - logs:/var/log
+              yaql:
+                expression: $.data.common.concat($.data.service)
+                data:
+                  common: {get_attr: [ContainersCommon, volumes]}
+                  service:
+                    - /var/lib/kolla/config_files/keystone.json:/var/lib/kolla/config_files/config.json:ro
+                    - /var/lib/config-data/keystone/var/www/:/var/www/:ro
+                    - /var/lib/config-data/keystone/etc/keystone/:/etc/keystone/:ro
+                    - /var/lib/config-data/keystone/etc/httpd/:/etc/httpd/:ro
+                    - logs:/var/log
+                    -
+                      if:
+                        - internal_tls_enabled
+                        - /etc/pki/tls/certs/httpd:/etc/pki/tls/certs/httpd:ro
+                        - ''
+                    -
+                      if:
+                        - internal_tls_enabled
+                        - /etc/pki/tls/private/httpd:/etc/pki/tls/private/httpd:ro
+                        - ''
             environment:
               - KOLLA_BOOTSTRAP=True
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
@@ -149,11 +142,10 @@ outputs:
           config_volume: 'keystone_init_tasks'
           puppet_tags: 'keystone_config,keystone_domain_config,keystone_endpoint,keystone_identity_provider,keystone_paste_ini,keystone_role,keystone_service,keystone_tenant,keystone_user,keystone_user_role,keystone_domain'
           step_config: 'include ::tripleo::profile::base::keystone'
-          config_image:
-            list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerKeystoneImage} ]
+          config_image: *keystone_image
       upgrade_tasks:
         - name: Stop and disable keystone service (running under httpd)
           tags: step2
           service: name=httpd state=stopped enabled=no
+      metadata_settings:
+        get_attr: [KeystoneBase, role_data, metadata_settings]

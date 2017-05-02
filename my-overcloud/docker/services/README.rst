@@ -23,7 +23,7 @@ puppet (our configuration tool of choice) into the Kolla base images. The
 undercloud nova-scheduler also requires openstack-tripleo-common to
 provide custom filters.
 
-To build Kolla images for TripleO adjust your kolla config to build your
+To build Kolla images for TripleO adjust your kolla config [*]_ to build your
 centos base image with puppet using the example below:
 
 .. code-block::
@@ -37,6 +37,10 @@ kolla-build --base centos --template-override template-overrides.j2
 
 ..
 
+.. [*] See the
+   `override file <https://github.com/openstack/tripleo-common/blob/master/contrib/tripleo_kolla_template_overrides.j2>`_
+   which can be used to build Kolla packages that work with TripleO, and an
+   `example build script <https://github.com/dprince/undercloud_containers/blob/master/build_kolla.sh>_.
 
 Docker settings
 ---------------
@@ -70,7 +74,7 @@ are re-asserted when applying latter ones.
      * puppet_tags: Puppet resource tag names that are used to generate config
        files with puppet. Only the named config resources are used to generate
        a config file. Any service that specifies tags will have the default
-       tags of 'file,concat,file_line' appended to the setting.
+       tags of 'file,concat,file_line,augeas' appended to the setting.
        Example: keystone_config
 
      * config_volume: The name of the volume (directory) where config files

@@ -21,13 +21,13 @@ parameters:
   NeutronWorkers:
     default: ''
     description: |
-      Sets the number of API and RPC workers for the Neutron service. The
-      default value results in the configuration being left unset and a
-      system-dependent default will be chosen (usually the number of
-      processors). Please note that this can result in a large number of
-      processes and memory consumption on systems with a large core count. On
-      such systems it is recommended that a non-default value be selected that
-      matches the load requirements.
+      Sets the number of API and RPC workers for the Neutron service.
+      The default value results in the configuration being left unset
+      and a system-dependent default will be chosen (usually the number
+      of processors). Please note that this can result in a large number
+      of processes and memory consumption on systems with a large core
+      count. On such systems it is recommended that a non-default value
+      be selected that matches the load requirements.
     type: string
   NeutronPassword:
     description: The password for the neutron service and db account, used by neutron agents.
@@ -57,6 +57,15 @@ parameters:
     default:
       tag: openstack.neutron.api
       path: /var/log/neutron/server.log
+  EnableInternalTLS:
+    type: boolean
+    default: false
+  NeutronApiPolicies:
+    description: |
+      A hash of policies to configure for Neutron API.
+      e.g. { neutron-context_is_admin: { key: context_is_admin, value: 'role:admin' } }
+    default: {}
+    type: json
 
   # DEPRECATED: the following options are deprecated and are currently maintained
   # for backwards compatibility. They will be removed in the Ocata cycle.
@@ -71,10 +80,6 @@ parameters:
       removed in Ocata.  Future releases will enable L3 HA by default if it is
       appropriate for the deployment type. Alternate mechanisms will be
       available to override.
-  EnableInternalTLS:
-    type: boolean
-    default: false
-
 parameter_groups:
 - label: deprecated
   description: |
@@ -87,6 +92,7 @@ parameter_groups:
 
 conditions:
   use_tls_proxy: {equals : [{get_param: EnableInternalTLS}, true]}
+  neutron_workers_unset: {equals : [{get_param: NeutronWorkers}, '']}
 
 resources:
 
@@ -128,18 +134,19 @@ outputs:
                   - {get_param: [EndpointMap, MysqlInternal, host]}
                   - '/ovs_neutron'
                   - '?read_default_file=/etc/my.cnf.d/tripleo.cnf&read_default_group=tripleo'
-            neutron::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri] }
+            neutron::policy::policies: {get_param: NeutronApiPolicies}
+            neutron::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix] }
             neutron::keystone::authtoken::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
-            neutron::server::api_workers: {get_param: NeutronWorkers}
-            neutron::server::rpc_workers: {get_param: NeutronWorkers}
             neutron::server::allow_automatic_l3agent_failover: {get_param: NeutronAllowL3AgentFailover}
             neutron::server::enable_proxy_headers_parsing: true
             neutron::keystone::authtoken::password: {get_param: NeutronPassword}
-            neutron::server::notifications::auth_url: { get_param: [ EndpointMap, KeystoneV3Admin, uri ] }
+            neutron::server::notifications::auth_url: { get_param: [ EndpointMap, KeystoneInternal, uri_no_suffix ] }
             neutron::server::notifications::tenant_name: 'service'
             neutron::server::notifications::project_name: 'service'
             neutron::server::notifications::password: {get_param: NovaPassword}
             neutron::keystone::authtoken::project_name: 'service'
+            neutron::keystone::authtoken::user_domain_name: 'Default'
+            neutron::keystone::authtoken::project_domain_name: 'Default'
             neutron::server::sync_db: true
             tripleo.neutron_api.firewall_rules:
               '114 neutron api':
@@ -170,6 +177,12 @@ outputs:
               - 'localhost'
               - {get_param: [ServiceNetMap, NeutronApiNetwork]}
             tripleo::profile::base::neutron::server::l3_ha_override: {get_param: NeutronL3HA}
+          -
+            if:
+            - neutron_workers_unset
+            - {}
+            - neutron::server::api_workers: {get_param: NeutronWorkers}
+              neutron::server::rpc_workers: {get_param: NeutronWorkers}
       step_config: |
         include tripleo::profile::base::neutron::server
       service_config_settings:
@@ -202,3 +215,5 @@ outputs:
           tags: step1
           when: neutron_server_enabled.rc == 0
           service: name=neutron-server state=stopped
+      metadata_settings:
+        get_attr: [TLSProxyBase, role_data, metadata_settings]

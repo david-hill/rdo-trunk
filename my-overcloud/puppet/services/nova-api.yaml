@@ -62,6 +62,12 @@ parameters:
     default: 300
     description: Timeout for Nova db sync
     type: number
+  NovaApiPolicies:
+    description: |
+      A hash of policies to configure for Nova API.
+      e.g. { nova-context_is_admin: { key: context_is_admin, value: 'role:admin' } }
+    default: {}
+    type: json
 
 conditions:
   nova_workers_zero: {equals : [{get_param: NovaWorkers}, 0]}
@@ -110,8 +116,10 @@ outputs:
                 - 13774
                 - 8775
           nova::keystone::authtoken::project_name: 'service'
+          nova::keystone::authtoken::user_domain_name: 'Default'
+          nova::keystone::authtoken::project_domain_name: 'Default'
           nova::keystone::authtoken::password: {get_param: NovaPassword}
-          nova::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri] }
+          nova::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix] }
           nova::keystone::authtoken::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
           nova::api::enabled: true
           nova::api::default_floating_pool: {get_param: NovaDefaultFloatingPool}
@@ -143,6 +151,7 @@ outputs:
           nova::api::neutron_metadata_proxy_shared_secret: {get_param: NeutronMetadataProxySharedSecret}
           nova::api::instance_name_template: {get_param: InstanceNameTemplate}
           nova_enable_db_purge: {get_param: NovaEnableDBPurge}
+          nova::policy::policies: {get_param: NovaApiPolicies}
         -
           if:
           - nova_workers_zero
@@ -218,14 +227,14 @@ outputs:
         - name: Run puppet apply to set tranport_url in nova.conf
           tags: step5
           when: is_bootstrap_node
-          command: puppet apply --detailed-exitcodes /root/nova-api_upgrade_manifest.pp
+          command: puppet apply --modulepath /etc/puppet/modules:/opt/stack/puppet-modules:/usr/share/openstack-puppet/modules --detailed-exitcodes /root/nova-api_upgrade_manifest.pp
           register: puppet_apply_nova_api_upgrade
           failed_when: puppet_apply_nova_api_upgrade.rc not in [0,2]
           changed_when: puppet_apply_nova_api_upgrade.rc == 2
         - name: Setup cell_v2 (map cell0)
           tags: step5
           when: is_bootstrap_node
-          command: nova-manage cell_v2 map_cell0
+          shell: nova-manage cell_v2 map_cell0 --database_connection=$(hiera nova::cell0_database_connection)
         - name: Setup cell_v2 (create default cell)
           tags: step5
           when: is_bootstrap_node
@@ -241,15 +250,15 @@ outputs:
           command: nova-manage db sync
           async: {get_param: NovaDbSyncTimeout}
           poll: 10
-        - name: Setup cell_v2 (migrate hosts)
-          tags: step5
-          when: is_bootstrap_node
-          command: nova-manage cell_v2 map_cell_and_hosts
         - name: Setup cell_v2 (get cell uuid)
           tags: step5
           when: is_bootstrap_node
           shell: nova-manage cell_v2 list_cells | sed -e '1,3d' -e '$d' | awk -F ' *| *' '$2 == "default" {print $4}'
           register: nova_api_cell_uuid
+        - name: Setup cell_v2 (migrate hosts)
+          tags: step5
+          when: is_bootstrap_node
+          command: nova-manage cell_v2 discover_hosts --cell_uuid {{nova_api_cell_uuid.stdout}} --verbose
         - name: Setup cell_v2 (migrate instances)
           tags: step5
           when: is_bootstrap_node

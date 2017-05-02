@@ -8,7 +8,7 @@ parameters:
     description: namespace
     default: 'tripleoupstream'
     type: string
-  DockerNeutronApiImage:
+  DockerNeutronDHCPImage:
     description: image
     default: 'centos-binary-neutron-dhcp-agent:latest'
     type: string
@@ -33,6 +33,9 @@ parameters:
     type: json
 
 resources:
+
+  ContainersCommon:
+    type: ./containers-common.yaml
 
   NeutronBase:
     type: ../../puppet/services/neutron-dhcp.yaml
@@ -62,35 +65,29 @@ outputs:
             - '/'
             - [ {get_param: DockerNamespace}, {get_param: DockerNeutronConfigImage} ]
       kolla_config:
-         /var/lib/kolla/config_files/neutron_dhcp.json:
-           command: /usr/bin/neutron-dhcp-agent --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/dhcp_agent.ini --log-file /var/log/neutron/dhcp-agent.log
-           config_files:
-           - dest: /etc/neutron/neutron.conf
-             owner: neutron
-             perm: '0640'
-             source: /var/lib/kolla/config_files/src/etc/neutron/neutron.conf
-           - dest: /etc/neutron/dhcp_agent.ini
-             owner: neutron
-             perm: '0640'
-             source: /var/lib/kolla/config_files/src/etc/neutron/dhcp_agent.ini
+        /var/lib/kolla/config_files/neutron_dhcp.json:
+          command: /usr/bin/neutron-dhcp-agent --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/dhcp_agent.ini --log-file /var/log/neutron/dhcp-agent.log
       docker_config:
         step_4:
           neutron_dhcp:
-            image: &neutron_dhcp_image
+            image:
               list_join:
                 - '/'
-                - [ {get_param: DockerNamespace}, {get_param: DockerNeutronApiImage} ]
+                - [ {get_param: DockerNamespace}, {get_param: DockerNeutronDHCPImage} ]
             net: host
             pid: host
             privileged: true
             restart: always
             volumes:
-              - /var/lib/kolla/config_files/neutron_dhcp.json:/var/lib/kolla/config_files/config.json:ro
-              - /var/lib/config-data/neutron/:/var/lib/kolla/config_files/src:ro
-              - /etc/localtime:/etc/localtime:ro
-              - /etc/hosts:/etc/hosts:ro
-              - /lib/modules:/lib/modules:ro
-              - /run/:/run
+              yaql:
+                expression: $.data.common.concat($.data.service)
+                data:
+                  common: {get_attr: [ContainersCommon, volumes]}
+                  service:
+                    - /var/lib/kolla/config_files/neutron_dhcp.json:/var/lib/kolla/config_files/config.json:ro
+                    - /var/lib/config-data/neutron/etc/neutron/:/etc/neutron/:ro
+                    - /lib/modules:/lib/modules:ro
+                    - /run/:/run
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
       upgrade_tasks:

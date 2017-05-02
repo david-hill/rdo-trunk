@@ -12,7 +12,7 @@ parameters:
     description: image
     default: 'centos-binary-nova-api:latest'
     type: string
-  DockerNovaBaseImage:
+  DockerNovaConfigImage:
     description: image
     default: 'centos-binary-nova-base:latest'
     type: string
@@ -33,6 +33,9 @@ parameters:
 
 resources:
 
+  ContainersCommon:
+    type: ./containers-common.yaml
+
   NovaApiBase:
     type: ../../puppet/services/nova-api.yaml
     properties:
@@ -50,7 +53,10 @@ outputs:
           - get_attr: [NovaApiBase, role_data, config_settings]
           - apache::default_vhost: false
       step_config: &step_config
-        get_attr: [NovaApiBase, role_data, step_config]
+        list_join:
+          - "\n"
+          - - "['Nova_cell_v2'].each |String $val| { noop_resource($val) }"
+            - {get_attr: [NovaApiBase, role_data, step_config]}
       service_config_settings: {get_attr: [NovaApiBase, role_data, service_config_settings]}
       # BEGIN DOCKER SETTINGS
       puppet_config:
@@ -60,15 +66,10 @@ outputs:
         config_image:
           list_join:
           - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerNovaBaseImage} ]
+          - [ {get_param: DockerNamespace}, {get_param: DockerNovaConfigImage} ]
       kolla_config:
-         /var/lib/kolla/config_files/nova_api.json:
-           command: /usr/bin/nova-api
-           config_files:
-           - dest: /etc/nova/nova.conf
-             owner: nova
-             perm: '0640'
-             source: /var/lib/kolla/config_files/src/etc/nova/nova.conf
+        /var/lib/kolla/config_files/nova_api.json:
+          command: /usr/bin/nova-api
       docker_config:
         step_3:
           nova_api_db_sync:
@@ -128,14 +129,18 @@ outputs:
             privileged: true
             restart: always
             volumes:
-              - /var/lib/kolla/config_files/nova_api.json:/var/lib/kolla/config_files/config.json:ro
-              - /var/lib/config-data/nova/:/var/lib/kolla/config_files/src:ro
-              - /etc/hosts:/etc/hosts:ro
-              - /etc/localtime:/etc/localtime:ro
+              yaql:
+                expression: $.data.common.concat($.data.service)
+                data:
+                  common: {get_attr: [ContainersCommon, volumes]}
+                  service:
+                    - /var/lib/kolla/config_files/nova_api.json:/var/lib/kolla/config_files/config.json:ro
+                    - /var/lib/config-data/nova/etc/nova/:/etc/nova/:ro
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+        step_5:
           nova_api_discover_hosts:
-            start_order: 3
+            start_order: 1
             image: *nova_api_image
             net: host
             detach: false

@@ -32,6 +32,15 @@ parameters:
                  created yet) and should be changed to an actual UUID in
                  a post-deployment stack update.
     type: string
+  IronicDefaultNetworkInterface:
+    default: 'flat'
+    description: Network interface implementation to use by default.
+                 Set to "flat" (the default) to use one flat provider network.
+                 Set to "neutron" to make Ironic interact with the Neutron
+                 ML2 driver to enable other network types and certain
+                 advances networking features. Requires
+                 IronicProvisioningNetwork to be correctly set.
+    type: string
   IronicEnabledDrivers:
     default: ['pxe_ipmitool', 'pxe_drac', 'pxe_ilo']
     description: Enabled Ironic drivers
@@ -43,6 +52,19 @@ parameters:
   IronicIPXEPort:
     default: 8088
     description: Port to use for serving images when iPXE is used.
+    type: string
+  IronicPassword:
+    description: The password for the Ironic service and db account, used by the Ironic services
+    type: string
+    hidden: true
+  IronicProvisioningNetwork:
+    default: 'provisioning'
+    description: Name or UUID of the *overcloud* network used for provisioning
+                 of bare metal nodes, if IronicDefaultNetworkInterface is
+                 set to "neutron". The default value of "provisioning" can be
+                 left during the initial deployment (when no networks are
+                 created yet) and should be changed to an actual UUID in
+                 a post-deployment stack update.
     type: string
   MonitoringSubscriptionIronicConductor:
     default: 'overcloud-ironic-conductor'
@@ -65,11 +87,10 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [IronicBase, role_data, config_settings]
-          # FIXME: I have no idea why neutron_url is in "api" manifest
-          - ironic::api::neutron_url: {get_param: [EndpointMap, NeutronInternal, uri]}
-            ironic::conductor::api_url: {get_param: [EndpointMap, IronicInternal, uri_no_suffix]}
+          - ironic::conductor::api_url: {get_param: [EndpointMap, IronicInternal, uri_no_suffix]}
             ironic::conductor::cleaning_disk_erase: {get_param: IronicCleaningDiskErase}
             ironic::conductor::cleaning_network: {get_param: IronicCleaningNetwork}
+            ironic::conductor::provisioning_network: {get_param: IronicProvisioningNetwork}
             ironic::conductor::enabled_drivers: {get_param: IronicEnabledDrivers}
             # We need an endpoint containing a real IP, not a VIP here
             ironic_conductor_http_host: {get_param: [ServiceNetMap, IronicNetwork]}
@@ -91,6 +112,8 @@ outputs:
             # NOTE(dtantsur): UEFI only works with iPXE currently for us
             ironic::drivers::pxe::uefi_pxe_config_template: '$pybasedir/drivers/modules/ipxe_config.template'
             ironic::drivers::pxe::uefi_pxe_bootfile_name: 'ipxe.efi'
+            ironic::drivers::interfaces::enabled_network_interfaces: ['flat', 'neutron']
+            ironic::drivers::interfaces::default_network_interface: {get_param: IronicDefaultNetworkInterface}
             tripleo.ironic_conductor.firewall_rules:
               '134 ironic conductor TFTP':
                 dport: 69
@@ -104,7 +127,40 @@ outputs:
             # the VIP, but rather a real IP of the host.
             ironic::my_ip: {get_param: [ServiceNetMap, IronicNetwork]}
             ironic::pxe::common::http_port: {get_param: IronicIPXEPort}
-
+            # Credentials to access other services
+            ironic::glance::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
+            ironic::glance::username: 'ironic'
+            ironic::glance::password: {get_param: IronicPassword}
+            ironic::glance::project_name: 'service'
+            ironic::glance::user_domain_name: 'Default'
+            ironic::glance::project_domain_name: 'Default'
+            ironic::neutron::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
+            ironic::neutron::username: 'ironic'
+            ironic::neutron::password: {get_param: IronicPassword}
+            ironic::neutron::project_name: 'service'
+            ironic::neutron::user_domain_name: 'Default'
+            ironic::neutron::project_domain_name: 'Default'
+            ironic::service_catalog::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
+            ironic::service_catalog::username: 'ironic'
+            ironic::service_catalog::password: {get_param: IronicPassword}
+            ironic::service_catalog::project_name: 'service'
+            ironic::service_catalog::user_domain_name: 'Default'
+            ironic::service_catalog::project_domain_name: 'Default'
+            ironic::swift::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
+            ironic::swift::username: 'ironic'
+            ironic::swift::password: {get_param: IronicPassword}
+            ironic::swift::project_name: 'service'
+            ironic::swift::user_domain_name: 'Default'
+            ironic::swift::project_domain_name: 'Default'
+            # ironic-inspector support is not implemented, but let's configure
+            # the credentials for consistency.
+            ironic::drivers::inspector::enabled: false
+            ironic::drivers::inspector::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
+            ironic::drivers::inspector::username: 'ironic'
+            ironic::drivers::inspector::password: {get_param: IronicPassword}
+            ironic::drivers::inspector::project_name: 'service'
+            ironic::drivers::inspector::user_domain_name: 'Default'
+            ironic::drivers::inspector::project_domain_name: 'Default'
       step_config: |
         include ::tripleo::profile::base::ironic::conductor
       upgrade_tasks:

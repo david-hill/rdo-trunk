@@ -12,7 +12,7 @@ parameters:
     description: image
     default: 'centos-binary-nova-scheduler:latest'
     type: string
-  DockerNovaBaseImage:
+  DockerNovaConfigImage:
     description: image
     default: 'centos-binary-nova-base:latest'
     type: string
@@ -32,6 +32,9 @@ parameters:
     type: json
 
 resources:
+
+  ContainersCommon:
+    type: ./containers-common.yaml
 
   NovaSchedulerBase:
     type: ../../puppet/services/nova-scheduler.yaml
@@ -57,15 +60,10 @@ outputs:
         config_image:
           list_join:
           - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerNovaBaseImage} ]
+          - [ {get_param: DockerNamespace}, {get_param: DockerNovaConfigImage} ]
       kolla_config:
-         /var/lib/kolla/config_files/nova_scheduler.json:
-           command: /usr/bin/nova-scheduler
-           config_files:
-           - dest: /etc/nova/nova.conf
-             owner: nova
-             perm: '0600'
-             source: /var/lib/kolla/config_files/src/etc/nova/nova.conf
+        /var/lib/kolla/config_files/nova_scheduler.json:
+          command: /usr/bin/nova-scheduler
       docker_config:
         step_4:
           nova_scheduler:
@@ -77,11 +75,14 @@ outputs:
             privileged: false
             restart: always
             volumes:
-              - /run:/run
-              - /var/lib/kolla/config_files/nova_scheduler.json:/var/lib/kolla/config_files/config.json:ro
-              - /var/lib/config-data/nova/:/var/lib/kolla/config_files/src:ro
-              - /etc/hosts:/etc/hosts:ro
-              - /etc/localtime:/etc/localtime:ro
+              yaql:
+                expression: $.data.common.concat($.data.service)
+                data:
+                  common: {get_attr: [ContainersCommon, volumes]}
+                  service:
+                    - /var/lib/kolla/config_files/nova_scheduler.json:/var/lib/kolla/config_files/config.json:ro
+                    - /var/lib/config-data/nova/etc/nova/:/etc/nova/:ro
+                    - /run:/run
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
       upgrade_tasks:

@@ -1,7 +1,14 @@
 # certain initialization steps (run in a container) will occur
-# on the first role listed in the roles file
-{% set primary_role_name = roles[0].name -%}
-
+# on the role marked as primary controller or the first role listed
+{%- set primary_role = [roles[0]] -%}
+{%- for role in roles -%}
+  {%- if 'primary' in role.tags and 'controller' in role.tags -%}
+    {%- set _ = primary_role.pop() -%}
+    {%- set _ = primary_role.append(role) -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- set primary_role_name = primary_role[0].name -%}
+# primary role is: {{primary_role_name}}
 heat_template_version: ocata
 
 description: >
@@ -123,6 +130,32 @@ resources:
       servers: {get_param: [servers, {{role.name}}]}
       config: {get_resource: {{role.name}}CreateConfigDir}
 
+  {{role.name}}HostPrepAnsible:
+    type: OS::Heat::Value
+    properties:
+      value:
+        str_replace:
+          template: CONFIG
+          params:
+            CONFIG:
+              - hosts: localhost
+                connection: local
+                tasks: {get_param: [role_data, {{role.name}}, host_prep_tasks]}
+
+  {{role.name}}HostPrepConfig:
+    type: OS::Heat::SoftwareConfig
+    properties:
+      group: ansible
+      options:
+        modulepath: /usr/share/ansible-modules
+      config: {get_attr: [{{role.name}}HostPrepAnsible, value]}
+
+  {{role.name}}HostPrepDeployment:
+    type: OS::Heat::SoftwareDeploymentGroup
+    properties:
+      servers: {get_param: [servers, {{role.name}}]}
+      config: {get_resource: {{role.name}}HostPrepConfig}
+
   # this creates a JSON config file for our docker-puppet.py script
   {{role.name}}GenPuppetConfig:
     type: OS::Heat::StructuredConfig
@@ -146,7 +179,7 @@ resources:
 
   {{role.name}}GenerateConfigDeployment:
     type: OS::Heat::SoftwareDeploymentGroup
-    depends_on: [{{role.name}}GenPuppetDeployment, {{role.name}}ArtifactsDeploy, {{role.name}}CreateConfigDirDeployment]
+    depends_on: [{{role.name}}GenPuppetDeployment, {{role.name}}ArtifactsDeploy, {{role.name}}CreateConfigDirDeployment, {{role.name}}HostPrepDeployment]
     properties:
       name: {{role.name}}GenerateConfigDeployment
       servers: {get_param: [servers, {{role.name}}]}

@@ -28,11 +28,21 @@
 # ServicesDefault: (list) optional default list of services to be deployed
 # on the role, defaults to an empty list. Sets the default for the
 # {{role.name}}Services parameter in overcloud.yaml
-
-- name: Controller # the 'primary' role goes first
+#
+# tags: (list) list of tags used by other parts of the deployment process to
+# find the role for a specific type of functionality. Currently a role
+# with both 'primary' and 'controller' is used as the primary role for the
+# deployment process. If no roles have have 'primary' and 'controller', the
+# first role in this file is used as the primary role.
+#
+- name: Controller
   CountDefault: 1
+  tags:
+    - primary
+    - controller
   ServicesDefault:
     - OS::TripleO::Services::CACerts
+    - OS::TripleO::Services::CertmongerUser
     - OS::TripleO::Services::CephMds
     - OS::TripleO::Services::CephMon
     - OS::TripleO::Services::CephExternal
@@ -42,6 +52,10 @@
     - OS::TripleO::Services::CinderBackup
     - OS::TripleO::Services::CinderScheduler
     - OS::TripleO::Services::CinderVolume
+    - OS::TripleO::Services::CinderBackendDellPs
+    - OS::TripleO::Services::CinderBackendDellSc
+    - OS::TripleO::Services::CinderBackendNetApp
+    - OS::TripleO::Services::CinderBackendScaleIO
     - OS::TripleO::Services::Congress
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::Keystone
@@ -52,8 +66,9 @@
     - OS::TripleO::Services::HeatEngine
     - OS::TripleO::Services::MySQL
     - OS::TripleO::Services::MySQLClient
-    - OS::TripleO::Services::NeutronBgpvpnApi
+    - OS::TripleO::Services::NeutronBgpVpnApi
     - OS::TripleO::Services::NeutronDhcpAgent
+    - OS::TripleO::Services::NeutronL2gwApi
     - OS::TripleO::Services::NeutronL3Agent
     - OS::TripleO::Services::NeutronMetadataAgent
     - OS::TripleO::Services::NeutronApi
@@ -76,12 +91,13 @@
     - OS::TripleO::Services::Ec2Api
     - OS::TripleO::Services::Ntp
     - OS::TripleO::Services::SwiftProxy
+    - OS::TripleO::Services::ExternalSwiftProxy
     - OS::TripleO::Services::SwiftStorage
     - OS::TripleO::Services::SwiftRingBuilder
     - OS::TripleO::Services::Snmp
     - OS::TripleO::Services::Sshd
+    - OS::TripleO::Services::Securetty
     - OS::TripleO::Services::Timezone
-    - OS::TripleO::Services::CeilometerApi
     - OS::TripleO::Services::CeilometerCollector
     - OS::TripleO::Services::CeilometerExpirer
     - OS::TripleO::Services::CeilometerAgentCentral
@@ -135,12 +151,14 @@
   disable_upgrade_deployment: True
   ServicesDefault:
     - OS::TripleO::Services::CACerts
+    - OS::TripleO::Services::CertmongerUser
     - OS::TripleO::Services::CephClient
     - OS::TripleO::Services::CephExternal
     - OS::TripleO::Services::Timezone
     - OS::TripleO::Services::Ntp
     - OS::TripleO::Services::Snmp
     - OS::TripleO::Services::Sshd
+    - OS::TripleO::Services::Securetty
     - OS::TripleO::Services::NovaCompute
     - OS::TripleO::Services::NovaLibvirt
     - OS::TripleO::Services::Kernel
@@ -159,16 +177,19 @@
     - OS::TripleO::Services::Collectd
     - OS::TripleO::Services::Vpp
     - OS::TripleO::Services::MySQLClient
+    - OS::TripleO::Services::Docker
 
 - name: BlockStorage
   ServicesDefault:
     - OS::TripleO::Services::CACerts
+    - OS::TripleO::Services::CertmongerUser
     - OS::TripleO::Services::BlockStorageCinderVolume
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::Ntp
     - OS::TripleO::Services::Timezone
     - OS::TripleO::Services::Snmp
     - OS::TripleO::Services::Sshd
+    - OS::TripleO::Services::Securetty
     - OS::TripleO::Services::TripleoPackages
     - OS::TripleO::Services::TripleoFirewall
     - OS::TripleO::Services::SensuClient
@@ -176,17 +197,20 @@
     - OS::TripleO::Services::AuditD
     - OS::TripleO::Services::Collectd
     - OS::TripleO::Services::MySQLClient
+    - OS::TripleO::Services::Docker
 
 - name: ObjectStorage
   disable_upgrade_deployment: True
   ServicesDefault:
     - OS::TripleO::Services::CACerts
+    - OS::TripleO::Services::CertmongerUser
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::Ntp
     - OS::TripleO::Services::SwiftStorage
     - OS::TripleO::Services::SwiftRingBuilder
     - OS::TripleO::Services::Snmp
     - OS::TripleO::Services::Sshd
+    - OS::TripleO::Services::Securetty
     - OS::TripleO::Services::Timezone
     - OS::TripleO::Services::TripleoPackages
     - OS::TripleO::Services::TripleoFirewall
@@ -195,15 +219,18 @@
     - OS::TripleO::Services::AuditD
     - OS::TripleO::Services::Collectd
     - OS::TripleO::Services::MySQLClient
+    - OS::TripleO::Services::Docker
 
 - name: CephStorage
   ServicesDefault:
     - OS::TripleO::Services::CACerts
+    - OS::TripleO::Services::CertmongerUser
     - OS::TripleO::Services::CephOSD
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::Ntp
     - OS::TripleO::Services::Snmp
     - OS::TripleO::Services::Sshd
+    - OS::TripleO::Services::Securetty
     - OS::TripleO::Services::Timezone
     - OS::TripleO::Services::TripleoPackages
     - OS::TripleO::Services::TripleoFirewall
@@ -212,3 +239,4 @@
     - OS::TripleO::Services::AuditD
     - OS::TripleO::Services::Collectd
     - OS::TripleO::Services::MySQLClient
+    - OS::TripleO::Services::Docker

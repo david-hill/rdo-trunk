@@ -1,0 +1,111 @@
+heat_template_version: ocata
+
+description: >
+  OpenStack containerized gnocchi service
+
+parameters:
+  DockerNamespace:
+    description: namespace
+    default: 'tripleoupstream'
+    type: string
+  DockerGnocchiApiImage:
+    description: image
+    default: 'centos-binary-gnocchi-api:latest'
+    type: string
+  EndpointMap:
+    default: {}
+    description: Mapping of service endpoint -> protocol. Typically set
+                 via parameter_defaults in the resource registry.
+    type: json
+  ServiceNetMap:
+    default: {}
+    description: Mapping of service_name -> network name. Typically set
+                 via parameter_defaults in the resource registry.  This
+                 mapping overrides those in ServiceNetMapDefaults.
+    type: json
+  DefaultPasswords:
+    default: {}
+    type: json
+
+resources:
+
+  ContainersCommon:
+    type: ./containers-common.yaml
+
+  GnocchiApiPuppetBase:
+      type: ../../puppet/services/gnocchi-api.yaml
+      properties:
+        EndpointMap: {get_param: EndpointMap}
+        ServiceNetMap: {get_param: ServiceNetMap}
+        DefaultPasswords: {get_param: DefaultPasswords}
+
+outputs:
+  role_data:
+    description: Role data for the gnocchi API role.
+    value:
+      service_name: {get_attr: [GnocchiApiPuppetBase, role_data, service_name]}
+      config_settings:
+        map_merge:
+          - get_attr: [GnocchiApiPuppetBase, role_data, config_settings]
+          - apache::default_vhost: false
+      step_config: &step_config
+        get_attr: [GnocchiApiPuppetBase, role_data, step_config]
+      service_config_settings: {get_attr: [GnocchiApiPuppetBase, role_data, service_config_settings]}
+      # BEGIN DOCKER SETTINGS
+      puppet_config:
+        config_volume: gnocchi
+        puppet_tags: gnocchi_api_paste_ini,gnocchi_config
+        step_config: *step_config
+        config_image: &gnocchi_image
+          list_join:
+            - '/'
+            - [ {get_param: DockerNamespace}, {get_param: DockerGnocchiApiImage} ]
+      kolla_config:
+        /var/lib/kolla/config_files/gnocchi-api.json:
+          command: /usr/sbin/httpd -DFOREGROUND
+      docker_config:
+        step_3:
+          gnocchi_init_log:
+            start_order: 0
+            image: *gnocchi_image
+            user: root
+            command: ['/bin/bash', '-c', 'mkdir -p /var/log/httpd && mkdir -p /var/log/gnocchi && chown gnocchi:gnocchi /var/log/gnocchi']
+            volumes:
+              - logs:/var/log
+          gnocchi_db_sync:
+            start_order: 1
+            image: *gnocchi_image
+            net: host
+            detach: false
+            privileged: false
+            volumes:
+              yaql:
+                expression: $.data.common.concat($.data.service)
+                data:
+                  common: {get_attr: [ContainersCommon, volumes]}
+                  service:
+                    - /var/lib/config-data/gnocchi/etc/gnocchi/:/etc/gnocchi/:ro
+                    - logs:/var/log
+            command: ["/usr/bin/gnocchi-upgrade", "--skip-storage"]
+        step_4:
+          gnocchi_api:
+            image: *gnocchi_image
+            net: host
+            privileged: false
+            restart: always
+            volumes:
+              yaql:
+                expression: $.data.common.concat($.data.service)
+                data:
+                  common: {get_attr: [ContainersCommon, volumes]}
+                  service:
+                    - /var/lib/kolla/config_files/gnocchi-api.json:/var/lib/kolla/config_files/config.json:ro
+                    - /var/lib/config-data/gnocchi/etc/gnocchi/:/etc/gnocchi/:ro
+                    - /var/lib/config-data/gnocchi/etc/httpd/:/etc/httpd/:ro
+                    - /var/lib/config-data/gnocchi/var/www/:/var/www/:ro
+            environment:
+              - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+      upgrade_tasks:
+        - name: Stop and disable httpd service
+          tags: step2
+          service: name=httpd state=stopped enabled=no

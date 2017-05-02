@@ -61,7 +61,10 @@ def rm_container(name):
                                stderr=subprocess.PIPE)
     cmd_stdout, cmd_stderr = subproc.communicate()
     print(cmd_stdout)
-    print(cmd_stderr)
+    if cmd_stderr and \
+            cmd_stderr != 'Error response from daemon: ' \
+            'No such container: {}\n'.format(name):
+        print(cmd_stderr)
 
 process_count = int(os.environ.get('PROCESS_COUNT',
                                    multiprocessing.cpu_count()))
@@ -202,14 +205,26 @@ def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volume
                 '--volume', '/usr/share/openstack-puppet/modules/:/usr/share/openstack-puppet/modules/:ro',
                 '--volume', '/var/lib/config-data/:/var/lib/config-data/:rw',
                 '--volume', 'tripleo_logs:/var/log/tripleo/',
+                # OpenSSL trusted CA injection
+                '--volume', '/etc/pki/ca-trust/extracted:/etc/pki/ca-trust/extracted:ro',
+                '--volume', '/etc/pki/tls/certs/ca-bundle.crt:/etc/pki/tls/certs/ca-bundle.crt:ro',
+                '--volume', '/etc/pki/tls/certs/ca-bundle.trust.crt:/etc/pki/tls/certs/ca-bundle.trust.crt:ro',
+                '--volume', '/etc/pki/tls/cert.pem:/etc/pki/tls/cert.pem:ro',
+                # script injection
                 '--volume', '%s:%s:rw' % (sh_script, sh_script) ]
 
         for volume in volumes:
-            dcmd.extend(['--volume', volume])
+            if volume:
+                dcmd.extend(['--volume', volume])
 
         dcmd.extend(['--entrypoint', sh_script])
 
         env = {}
+        # NOTE(flaper87): Always copy the DOCKER_* environment variables as
+        # they contain the access data for the docker daemon.
+        for k in filter(lambda k: k.startswith('DOCKER'), os.environ.keys()):
+            env[k] = os.environ.get(k)
+
         if os.environ.get('NET_HOST', 'false') == 'true':
             print('NET_HOST enabled')
             dcmd.extend(['--net', 'host', '--volume',
@@ -241,9 +256,9 @@ for config_volume in configs:
     volumes = service[4] if len(service) > 4 else []
 
     if puppet_tags:
-        puppet_tags = "file,file_line,concat,%s" % puppet_tags
+        puppet_tags = "file,file_line,concat,augeas,%s" % puppet_tags
     else:
-        puppet_tags = "file,file_line,concat"
+        puppet_tags = "file,file_line,concat,augeas"
 
     process_map.append([config_volume, puppet_tags, manifest, config_image, volumes])
 
@@ -253,4 +268,13 @@ for p in process_map:
 # Fire off processes to perform each configuration.  Defaults
 # to the number of CPUs on the system.
 p = multiprocessing.Pool(process_count)
-p.map(mp_puppet_config, process_map)
+returncodes = list(p.map(mp_puppet_config, process_map))
+config_volumes = [pm[0] for pm in process_map]
+success = True
+for returncode, config_volume in zip(returncodes, config_volumes):
+    if returncode != 0:
+        print('ERROR configuring %s' % config_volume)
+        success = False
+
+if not success:
+    sys.exit(1)

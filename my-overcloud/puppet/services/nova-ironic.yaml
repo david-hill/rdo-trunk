@@ -44,10 +44,14 @@ outputs:
             nova::compute::vnc_enabled: false
             nova::ironic::common::password: {get_param: IronicPassword}
             nova::ironic::common::project_name: 'service'
-            nova::ironic::common::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri]}
+            nova::ironic::common::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
             nova::ironic::common::username: 'ironic'
             nova::ironic::common::api_endpoint: {get_param: [EndpointMap, IronicInternal, uri]}
             nova::network::neutron::dhcp_domain: ''
             nova::scheduler::filter::scheduler_host_manager: 'ironic_host_manager'
       step_config: |
         include tripleo::profile::base::nova::compute::ironic
+      upgrade_tasks:
+        - name: Stop openstack-nova-compute service
+          tags: step1
+          service: name=openstack-nova-compute state=stopped enabled=no

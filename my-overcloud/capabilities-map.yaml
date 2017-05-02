@@ -2,12 +2,6 @@
 # repository for deployment using puppet. It groups configuration by topic,
 # describes possible combinations of environments and resource capabilities.
 
-# root_template: identifies repository's root template
-# root_environment: identifies root_environment, this one is special in terms of
-#   order in which the environments are merged before deploying. This one serves as
-#   a base and it's parameters/resource_registry gets overridden by other environments
-#   if used.
-
 # topics:
 # High Level grouping by purpose of environments
 # Attributes:
@@ -38,8 +32,6 @@
 # only when that given environment is used. (resource_type of that environment can
 # be implemented using multiple templates).
 
-root_template: overcloud.yaml
-root_environment: overcloud-resource-registry-puppet.yaml
 topics:
   - title: Base Resources Configuration
     description:
@@ -370,6 +362,11 @@ topics:
             description: Enable FOS in the overcloud
             requires:
               - overcloud-resource-registry-puppet.yaml
+          - file: environments/neutron-l2gw.yaml
+            title: Neutron L2 gateway Service Plugin
+            description: Enables Neutron L2 gateway Service Plugin
+            requires:
+              - overcloud-resource-registry-puppet.yaml
 
   - title: Nova Extensions
     description:
@@ -547,7 +544,7 @@ topics:
         description: Enable monitoring agents
         environments:
           - file: environments/monitoring-environment.yaml
-            title: enable monitoring agents
+            title: Enable monitoring agents
             description:
             requires:
               - overcloud-resource-registry-puppet.yaml
@@ -556,6 +553,14 @@ topics:
         environments:
           - file: environments/logging-environment.yaml
             title: Enable fluentd client
+            description:
+            requires:
+              - overcloud-resource-registry-puppet.yaml
+      - title: Performance monitoring
+        description: Enable performance monitoring agents
+        environments:
+          - file: environments/collectd-environment.yaml
+            title: Enable performance monitoring agents
             description:
             requires:
               - overcloud-resource-registry-puppet.yaml
@@ -592,3 +597,8 @@ topics:
         environments:
           - file: environments/cadf.yaml
             title: Keystone CADF auditing
+      - title: SecureTTY Values
+        description: Set values within /etc/securetty
+        environments:
+          - file: environments/securetty.yaml
+            title: SecureTTY Values
