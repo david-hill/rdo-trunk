@@ -38,6 +38,30 @@ if [[ -a "$timestamp_file" ]]; then
 fi
 touch "$timestamp_file"
 
+pacemaker_status=""
+# We include word boundaries in order to not match pacemaker_remote
+if hiera -c /etc/puppet/hiera.yaml service_names | grep -q '\bpacemaker\b'; then
+    pacemaker_status=$(systemctl is-active pacemaker)
+fi
+
+# (NB: when backporting this s/pacemaker_short_bootstrap_node_name/bootstrap_nodeid)
+# This runs before the yum_update so we are guaranteed to run it even in the absence
+# of packages to update (the check for -z "$update_identifier" guarantees that this
+# is run only on overcloud stack update -i)
+if [[ "$pacemaker_status" == "active" && \
+        "$(hiera -c /etc/puppet/hiera.yaml pacemaker_short_bootstrap_node_name)" == "$(facter hostname)" ]] ; then \
+    # OCF scripts don't cope with -eu
+    echo "Verifying if we need to fix up any IPv6 VIPs"
+    set +eu
+    fixup_wrong_ipv6_vip
+    ret=$?
+    set -eu
+    if [ $ret -ne 0 ]; then
+        echo "Fixing up IPv6 VIPs failed. Stopping here. (See https://bugs.launchpad.net/tripleo/+bug/1686357 for more info)"
+        exit 1
+    fi
+fi
+
 command_arguments=${command_arguments:-}
 
 # yum check-update exits 100 if updates are available
@@ -53,29 +77,6 @@ if [[ "$check_update_exit" == "1" ]]; then
 elif [[ "$check_update_exit" != "100" ]]; then
     echo "No packages require updating"
     exit 0
-fi
-
-pacemaker_status=""
-if hiera -c /etc/puppet/hiera.yaml service_names | grep -q pacemaker; then
-    pacemaker_status=$(systemctl is-active pacemaker)
-fi
-
-# Fix the redis/rabbit resource start/stop timeouts. See https://bugs.launchpad.net/tripleo/+bug/1633455
-# and https://bugs.launchpad.net/tripleo/+bug/1634851
-if [[ "$pacemaker_status" == "active" && \
-      "$(hiera -c /etc/puppet/hiera.yaml bootstrap_nodeid)" = "$(facter hostname)" ]] ; then
-    if pcs resource show rabbitmq | grep -E "start.*timeout=100"; then
-        pcs resource update rabbitmq op start timeout=200s
-    fi
-    if pcs resource show rabbitmq | grep -E "stop.*timeout=90"; then
-        pcs resource update rabbitmq op stop timeout=200s
-    fi
-    if pcs resource show redis | grep -E "start.*timeout=120"; then
-        pcs resource update redis op start timeout=200s
-    fi
-    if pcs resource show redis | grep -E "stop.*timeout=120"; then
-        pcs resource update redis op stop timeout=200s
-    fi
 fi
 
 # special case https://bugs.launchpad.net/tripleo/+bug/1635205 +bug/1669714
@@ -147,6 +148,7 @@ if [[ "$pacemaker_status" == "active" ]] ; then
     pcs status
 fi
 
-echo "Finished yum_update.sh on server $deploy_server_id at `date`"
+
+echo "Finished yum_update.sh on server $deploy_server_id at `date` with return code: $return_code"
 
 exit $return_code

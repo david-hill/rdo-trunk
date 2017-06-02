@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack Barbican API service configured with Puppet
@@ -12,6 +12,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -70,6 +78,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -104,15 +114,15 @@ outputs:
                 params:
                   $NETWORK: {get_param: [ServiceNetMap, BarbicanApiNetwork]}
             barbican::db::database_connection:
-              list_join:
-                - ''
-                - - {get_param: [EndpointMap, MysqlInternal, protocol]}
-                  - '://barbican:'
-                  - {get_param: BarbicanPassword}
-                  - '@'
-                  - {get_param: [EndpointMap, MysqlInternal, host]}
-                  - '/barbican'
-                  - '?read_default_file=/etc/my.cnf.d/tripleo.cnf&read_default_group=tripleo'
+              make_url:
+                scheme: {get_param: [EndpointMap, MysqlInternal, protocol]}
+                username: barbican
+                password: {get_param: BarbicanPassword}
+                host: {get_param: [EndpointMap, MysqlInternal, host]}
+                path: /barbican
+                query:
+                  read_default_file: /etc/my.cnf.d/tripleo.cnf
+                  read_default_group: tripleo
             tripleo.barbican_api.firewall_rules:
               '117 barbican':
                 dport:
@@ -153,16 +163,22 @@ outputs:
       metadata_settings:
         get_attr: [ApacheServiceBase, role_data, metadata_settings]
       upgrade_tasks:
-        - name: Check if barbican_api is deployed
-          command: systemctl is-enabled openstack-barbican-api
-          tags: common
-          ignore_errors: True
-          register: barbican_api_enabled
-        - name: "PreUpgrade step0,validation: Check service openstack-barbican-api is running"
-          shell: /usr/bin/systemctl show 'openstack-barbican-api' --property ActiveState | grep '\bactive\b'
-          when: barbican_api_enabled.rc == 0
-          tags: step0,validation
-        - name: Install openstack-barbican-api package if it was disabled
-          tags: step3
-          yum: name=openstack-barbican-api state=latest
-          when: barbican_api_enabled.rc != 0
+        yaql:
+          expression: $.data.apache_upgrade + $.data.barbican_api_upgrade
+          data:
+            apache_upgrade:
+              get_attr: [ApacheServiceBase, role_data, upgrade_tasks]
+            barbican_api_upgrade:
+              - name: Check if barbican_api is deployed
+                command: systemctl is-enabled openstack-barbican-api
+                tags: common
+                ignore_errors: True
+                register: barbican_api_enabled
+              - name: "PreUpgrade step0,validation: Check service openstack-barbican-api is running"
+                shell: /usr/bin/systemctl show 'openstack-barbican-api' --property ActiveState | grep '\bactive\b'
+                when: barbican_api_enabled.rc == 0
+                tags: step0,validation
+              - name: Install openstack-barbican-api package if it was disabled
+                tags: step3
+                yum: name=openstack-barbican-api state=latest
+                when: barbican_api_enabled.rc != 0

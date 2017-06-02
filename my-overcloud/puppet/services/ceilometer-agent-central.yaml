@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack Ceilometer Central Agent service configured with Puppet
@@ -12,6 +12,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -38,6 +46,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -53,6 +63,8 @@ outputs:
           - get_attr: [CeilometerServiceBase, role_data, config_settings]
           - ceilometer_redis_password: {get_param: RedisPassword}
             central_namespace: true
+      service_config_settings:
+        get_attr: [CeilometerServiceBase, role_data, service_config_settings]
       step_config: |
         include ::tripleo::profile::base::ceilometer::agent::polling
       upgrade_tasks:

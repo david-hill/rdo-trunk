@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack containerized Neutron API service
@@ -15,7 +15,7 @@ parameters:
   # we configure all neutron services in the same neutron
   DockerNeutronConfigImage:
     description: image
-    default: 'centos-binary-neutron-openvswitch-agent:latest'
+    default: 'centos-binary-neutron-server:latest'
     type: string
   EndpointMap:
     default: {}
@@ -31,6 +31,21 @@ parameters:
   DefaultPasswords:
     default: {}
     type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
+    type: json
+  EnableInternalTLS:
+    type: boolean
+    default: false
+
+conditions:
+
+  internal_tls_enabled: {equals: [{get_param: EnableInternalTLS}, true]}
 
 resources:
 
@@ -43,6 +58,8 @@ resources:
       EndpointMap: {get_param: EndpointMap}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -67,13 +84,29 @@ outputs:
       kolla_config:
         /var/lib/kolla/config_files/neutron_api.json:
           command: /usr/bin/neutron-server --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugin.ini
+          permissions:
+            - path: /var/log/neutron
+              owner: neutron:neutron
+              recurse: true
+        /var/lib/kolla/config_files/neutron_server_tls_proxy.json:
+          command: /usr/sbin/httpd -DFOREGROUND
       docker_config:
+        # db sync runs before permissions set by kolla_config
         step_3:
-          neutron_db_sync:
+          neutron_init_logs:
+            start_order: 0
             image: &neutron_api_image
               list_join:
                 - '/'
                 - [ {get_param: DockerNamespace}, {get_param: DockerNeutronApiImage} ]
+            privileged: false
+            user: root
+            volumes:
+              - /var/log/containers/neutron:/var/log/neutron
+            command: ['/bin/bash', '-c', 'chown -R neutron:neutron /var/log/neutron']
+          neutron_db_sync:
+            start_order: 1
+            image: *neutron_api_image
             net: host
             privileged: false
             detach: false
@@ -81,30 +114,52 @@ outputs:
             # and run as neutron user
             user: root
             volumes:
-              yaql:
-                expression: $.data.common.concat($.data.service)
-                data:
-                  common: {get_attr: [ContainersCommon, volumes]}
-                  service:
-                    - /var/lib/config-data/neutron/etc/neutron:/etc/neutron:ro
-                    - /var/lib/config-data/neutron/usr/share/neutron:/usr/share/neutron:ro
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/config-data/neutron/etc/neutron:/etc/neutron:ro
+                  - /var/lib/config-data/neutron/usr/share/neutron:/usr/share/neutron:ro
+                  - /var/log/containers/neutron:/var/log/neutron
             command: ['neutron-db-manage', 'upgrade', 'heads']
         step_4:
-          neutron_api:
-            image: *neutron_api_image
-            net: host
-            privileged: false
-            restart: always
-            volumes:
-              yaql:
-                expression: $.data.common.concat($.data.service)
-                data:
-                  common: {get_attr: [ContainersCommon, volumes]}
-                  service:
-                    - /var/lib/kolla/config_files/neutron_api.json:/var/lib/kolla/config_files/config.json:ro
-                    - /var/lib/config-data/neutron/etc/neutron/:/etc/neutron/:ro
-            environment:
-              - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+          map_merge:
+            - neutron_api:
+                image: *neutron_api_image
+                net: host
+                privileged: false
+                restart: always
+                volumes:
+                  list_concat:
+                    - {get_attr: [ContainersCommon, volumes]}
+                    -
+                      - /var/lib/kolla/config_files/neutron_api.json:/var/lib/kolla/config_files/config.json:ro
+                      - /var/lib/config-data/neutron/etc/neutron/:/etc/neutron/:ro
+                      - /var/log/containers/neutron:/var/log/neutron
+                environment:
+                  - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+            - if:
+                - internal_tls_enabled
+                - neutron_server_tls_proxy:
+                    image: *neutron_api_image
+                    net: host
+                    user: root
+                    restart: always
+                    volumes:
+                      list_concat:
+                        - {get_attr: [ContainersCommon, volumes]}
+                        -
+                          - /var/lib/kolla/config_files/neutron_server_tls_proxy.json:/var/lib/kolla/config_files/config.json:ro
+                          - /var/lib/config-data/neutron/etc/httpd/:/etc/httpd/:ro
+                          - /etc/pki/tls/certs/httpd:/etc/pki/tls/certs/httpd:ro
+                          - /etc/pki/tls/private/httpd:/etc/pki/tls/private/httpd:ro
+                    environment:
+                      - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+                - {}
+      host_prep_tasks:
+        - name: create persistent logs directory
+          file:
+            path: /var/log/containers/neutron
+            state: directory
       upgrade_tasks:
         - name: Stop and disable neutron_api service
           tags: step2

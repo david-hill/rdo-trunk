@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack containerized Neutron DHCP service
@@ -15,7 +15,7 @@ parameters:
   # we configure all neutron services in the same neutron
   DockerNeutronConfigImage:
     description: image
-    default: 'centos-binary-neutron-openvswitch-agent:latest'
+    default: 'centos-binary-neutron-server:latest'
     type: string
   EndpointMap:
     default: {}
@@ -31,6 +31,14 @@ parameters:
   DefaultPasswords:
     default: {}
     type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
+    type: json
 
 resources:
 
@@ -43,6 +51,8 @@ resources:
       EndpointMap: {get_param: EndpointMap}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -67,6 +77,10 @@ outputs:
       kolla_config:
         /var/lib/kolla/config_files/neutron_dhcp.json:
           command: /usr/bin/neutron-dhcp-agent --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/dhcp_agent.ini --log-file /var/log/neutron/dhcp-agent.log
+          permissions:
+            - path: /var/log/neutron
+              owner: neutron:neutron
+              recurse: true
       docker_config:
         step_4:
           neutron_dhcp:
@@ -79,17 +93,21 @@ outputs:
             privileged: true
             restart: always
             volumes:
-              yaql:
-                expression: $.data.common.concat($.data.service)
-                data:
-                  common: {get_attr: [ContainersCommon, volumes]}
-                  service:
-                    - /var/lib/kolla/config_files/neutron_dhcp.json:/var/lib/kolla/config_files/config.json:ro
-                    - /var/lib/config-data/neutron/etc/neutron/:/etc/neutron/:ro
-                    - /lib/modules:/lib/modules:ro
-                    - /run/:/run
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/kolla/config_files/neutron_dhcp.json:/var/lib/kolla/config_files/config.json:ro
+                  - /var/lib/config-data/neutron/etc/neutron/:/etc/neutron/:ro
+                  - /lib/modules:/lib/modules:ro
+                  - /run/:/run
+                  - /var/log/containers/neutron:/var/log/neutron
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+      host_prep_tasks:
+        - name: create persistent logs directory
+          file:
+            path: /var/log/containers/neutron
+            state: directory
       upgrade_tasks:
         - name: Stop and disable neutron_dhcp service
           tags: step2

@@ -1,7 +1,9 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
-  OpenStack Panko API service configured with Puppet
+  OpenStack Panko API service configured with Puppet.
+  Note, This service is deprecated in Pike release and will
+  be disabled in future releases.
 
 parameters:
   ServiceNetMap:
@@ -12,6 +14,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -38,6 +48,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
   ApacheServiceBase:
     type: ./apache.yaml
@@ -45,6 +57,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
       EnableInternalTLS: {get_param: EnableInternalTLS}
 
 outputs:
@@ -92,21 +106,27 @@ outputs:
       metadata_settings:
         get_attr: [ApacheServiceBase, role_data, metadata_settings]
       upgrade_tasks:
-        - name: Check if httpd is deployed
-          command: systemctl is-enabled httpd
-          tags: common
-          ignore_errors: True
-          register: httpd_enabled
-        - name: "PreUpgrade step0,validation: Check if httpd is running"
-          shell: >
-            /usr/bin/systemctl show 'httpd' --property ActiveState |
-            grep '\bactive\b'
-          when: httpd_enabled.rc == 0
-          tags: step0,validation
-        - name: Stop panko-api service (running under httpd)
-          tags: step1
-          service: name=httpd state=stopped
-          when: httpd_enabled.rc == 0
-        - name: Install openstack-panko-api package if it was not installed
-          tags: step3
-          yum: name=openstack-panko-api state=latest
+        yaql:
+          expression: $.data.apache_upgrade + $.data.panko_api_upgrade
+          data:
+            apache_upgrade:
+              get_attr: [ApacheServiceBase, role_data, upgrade_tasks]
+            panko_api_upgrade:
+              - name: Check if httpd is deployed
+                command: systemctl is-enabled httpd
+                tags: common
+                ignore_errors: True
+                register: httpd_enabled
+              - name: "PreUpgrade step0,validation: Check if httpd is running"
+                shell: >
+                  /usr/bin/systemctl show 'httpd' --property ActiveState |
+                  grep '\bactive\b'
+                when: httpd_enabled.rc == 0
+                tags: step0,validation
+              - name: Stop panko-api service (running under httpd)
+                tags: step1
+                service: name=httpd state=stopped
+                when: httpd_enabled.rc == 0
+              - name: Install openstack-panko-api package if it was not installed
+                tags: step3
+                yum: name=openstack-panko-api state=latest

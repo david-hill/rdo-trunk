@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: Collectd client service
 
@@ -16,6 +16,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   CollectdDefaultPlugins:
     default:
@@ -70,7 +78,9 @@ parameters:
   CollectdSecurityLevel:
     type: string
     description: >
-      Security level setting for remote collectd connection.
+      Security level setting for remote collectd connection. If it is
+      set to Sign or Encrypt the CollectdPassword and CollectdUsername
+      parameters need to be set.
     default: 'None'
     constraints:
       - allowed_values:

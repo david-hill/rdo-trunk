@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack Octavia API service.
@@ -12,6 +12,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -49,6 +57,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -65,15 +75,15 @@ outputs:
           - octavia::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri] }
             octavia::policy::policies: {get_param: OctaviaApiPolicies}
             octavia::db::database_connection:
-              list_join:
-                - ''
-                - - {get_param: [EndpointMap, MysqlInternal, protocol]}
-                  - '://octavia:'
-                  - {get_param: OctaviaPassword}
-                  - '@'
-                  - {get_param: [EndpointMap, MysqlInternal, host]}
-                  - '/octavia'
-                  - '?read_default_file=/etc/my.cnf.d/tripleo.cnf&read_default_group=tripleo'
+              make_url:
+                scheme: {get_param: [EndpointMap, MysqlInternal, protocol]}
+                username: octavia
+                password: {get_param: OctaviaPassword}
+                host: {get_param: [EndpointMap, MysqlInternal, host]}
+                path: /octavia
+                query:
+                  read_default_file: /etc/my.cnf.d/tripleo.cnf
+                  read_default_group: tripleo
             octavia::keystone::authtoken::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
             octavia::keystone::authtoken::project_name: 'service'
             octavia::keystone::authtoken::password: {get_param: OctaviaPassword}
@@ -84,7 +94,6 @@ outputs:
                   - 9876
                   - 13876
             octavia::api::host: {get_param: [ServiceNetMap, OctaviaApiNetwork]}
-            neutron::server::service_providers: ['LOADBALANCERV2:Octavia:neutron_lbaas.drivers.octavia.driver.OctaviaDriver:default']
       step_config: |
         include tripleo::profile::base::octavia::api
       service_config_settings:
@@ -103,3 +112,5 @@ outputs:
           octavia::db::mysql::allowed_hosts:
             - '%'
             - "%{hiera('mysql_bind_host')}"
+        neutron_api:
+          neutron::server::service_providers: ['LOADBALANCERV2:Octavia:neutron_lbaas.drivers.octavia.driver.OctaviaDriver:default']

@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   Mysql client settings
@@ -13,6 +13,14 @@ parameters:
   DefaultPasswords:
     default: {}
     type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
+    type: json
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
@@ -21,6 +29,11 @@ parameters:
   EnableInternalTLS:
     type: boolean
     default: false
+  InternalTLSCAFile:
+    default: '/etc/ipa/ca.crt'
+    type: string
+    description: Specifies the default CA cert to use if TLS is used for
+                 services in the internal network.
 
 outputs:
   role_data:
@@ -30,5 +43,6 @@ outputs:
       config_settings:
         tripleo::profile::base::database::mysql::client::mysql_client_bind_address: {get_param: [ServiceNetMap, MysqlNetwork]}
         tripleo::profile::base::database::mysql::client::enable_ssl: {get_param: EnableInternalTLS}
+        tripleo::profile::base::database::mysql::client::ssl_ca: {get_param: InternalTLSCAFile}
       step_config: |
         include ::tripleo::profile::base::database::mysql::client

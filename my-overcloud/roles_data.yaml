@@ -74,6 +74,7 @@
     - OS::TripleO::Services::NeutronApi
     - OS::TripleO::Services::NeutronCorePlugin
     - OS::TripleO::Services::NeutronOvsAgent
+    - OS::TripleO::Services::NeutronL2gwAgent
     - OS::TripleO::Services::RabbitMQ
     - OS::TripleO::Services::HAproxy
     - OS::TripleO::Services::Keepalived
@@ -98,8 +99,6 @@
     - OS::TripleO::Services::Sshd
     - OS::TripleO::Services::Securetty
     - OS::TripleO::Services::Timezone
-    - OS::TripleO::Services::CeilometerCollector
-    - OS::TripleO::Services::CeilometerExpirer
     - OS::TripleO::Services::CeilometerAgentCentral
     - OS::TripleO::Services::CeilometerAgentNotification
     - OS::TripleO::Services::Horizon
@@ -143,6 +142,7 @@
     - OS::TripleO::Services::OctaviaHousekeeping
     - OS::TripleO::Services::OctaviaWorker
     - OS::TripleO::Services::Vpp
+    - OS::TripleO::Services::NeutronVppAgent
     - OS::TripleO::Services::Docker
 
 - name: Compute
@@ -176,6 +176,7 @@
     - OS::TripleO::Services::AuditD
     - OS::TripleO::Services::Collectd
     - OS::TripleO::Services::Vpp
+    - OS::TripleO::Services::NeutronVppAgent
     - OS::TripleO::Services::MySQLClient
     - OS::TripleO::Services::Docker
 

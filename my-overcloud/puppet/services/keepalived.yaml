@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   Keepalived service configured with Puppet
@@ -12,6 +12,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -52,12 +60,12 @@ outputs:
         - tripleo.keepalived.firewall_rules:
             '106 keepalived vrrp':
               proto: vrrp
-        - 
+        -
           if:
           - control_iface_empty
           - {}
           - tripleo::keepalived::control_virtual_interface: {get_param: ControlVirtualInterface}
-        - 
+        -
           if:
           - public_iface_empty
           - {}

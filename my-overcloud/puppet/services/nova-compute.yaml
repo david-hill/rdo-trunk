@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack Nova Compute service configured with Puppet
@@ -12,6 +12,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -94,6 +102,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -119,6 +129,11 @@ outputs:
             nova::compute::libvirt::migration_support: false
             tripleo::profile::base::nova::manage_migration: true
             tripleo::profile::base::nova::migration_ssh_key: {get_param: MigrationSshKey}
+            tripleo::profile::base::nova::migration_ssh_localaddrs:
+              - "%{hiera('cold_migration_ssh_inbound_addr')}"
+              - "%{hiera('live_migration_ssh_inbound_addr')}"
+            live_migration_ssh_inbound_addr: {get_param: [ServiceNetMap, NovaLibvirtNetwork]}
+            cold_migration_ssh_inbound_addr: {get_param: [ServiceNetMap, NovaColdMigrationNetwork]}
             tripleo::profile::base::nova::nova_compute_enabled: true
             nova::compute::rbd::libvirt_images_rbd_pool: {get_param: NovaRbdPoolName}
             nova::compute::rbd::libvirt_rbd_user: {get_param: CephClientUserName}
@@ -175,6 +190,9 @@ outputs:
               template: "dest=/etc/nova/nova.conf section=upgrade_levels option=compute value=LEVEL"
               params:
                 LEVEL: {get_param: UpgradeLevelNovaCompute}
+        - name: install openstack-nova-migration
+          tags: step3
+          yum: name=openstack-nova-migration state=latest
         - name: Start nova-compute service
           tags: step6
           service: name=openstack-nova-compute state=started

@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   Openstack Zaqar service. Shared for all Heat services.
@@ -18,6 +18,14 @@ parameters:
   DefaultPasswords:
     default: {}
     type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
+    type: json
   Debug:
     default: ''
     description: Set to True to enable debugging on all services.
@@ -36,7 +44,26 @@ parameters:
       e.g. { zaqar-context_is_admin: { key: context_is_admin, value: 'role:admin' } }
     default: {}
     type: json
+  ZaqarWorkers:
+    type: string
+    description: Set the number of workers for zaqar::wsgi::apache
+    default: '%{::os_workers}'
+  EnableInternalTLS:
+    type: boolean
+    default: false
 
+conditions:
+  zaqar_workers_zero: {equals : [{get_param: ZaqarWorkers}, 0]}
+
+resources:
+
+  ApacheServiceBase:
+    type: ./apache.yaml
+    properties:
+      ServiceNetMap: {get_param: ServiceNetMap}
+      DefaultPasswords: {get_param: DefaultPasswords}
+      EndpointMap: {get_param: EndpointMap}
+      EnableInternalTLS: {get_param: EnableInternalTLS}
 
 outputs:
   role_data:
@@ -44,16 +71,31 @@ outputs:
     value:
       service_name: zaqar
       config_settings:
-        zaqar::policy::policies: {get_param: ZaqarPolicies}
-        zaqar::keystone::authtoken::password: {get_param: ZaqarPassword}
-        zaqar::keystone::authtoken::project_name: 'service'
-        zaqar::keystone::authtoken::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
-        zaqar::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri]}
-        zaqar::debug: {get_param: Debug}
-        zaqar::transport::websocket::bind: {get_param: [EndpointMap, ZaqarInternal, host]}
-        zaqar::transport::wsgi::bind: {get_param: [ServiceNetMap, ZaqarApiNetwork]}
-        zaqar::message_pipeline: 'zaqar.notification.notifier'
-        zaqar::unreliable: true
+        map_merge:
+          - get_attr: [ApacheServiceBase, role_data, config_settings]
+          - zaqar::policy::policies: {get_param: ZaqarPolicies}
+            zaqar::keystone::authtoken::password: {get_param: ZaqarPassword}
+            zaqar::keystone::authtoken::project_name: 'service'
+            zaqar::keystone::authtoken::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
+            zaqar::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri]}
+            zaqar::debug: {get_param: Debug}
+            zaqar::server::service_name: 'httpd'
+            zaqar::transport::websocket::bind: {get_param: [EndpointMap, ZaqarInternal, host]}
+            zaqar::wsgi::apache::ssl: false
+            zaqar::wsgi::apache::bind_host: {get_param: [ServiceNetMap, ZaqarApiNetwork]}
+            zaqar::message_pipeline: 'zaqar.notification.notifier'
+            zaqar::unreliable: true
+            zaqar::wsgi::apache::servername:
+              str_replace:
+                template:
+                  "%{hiera('fqdn_$NETWORK')}"
+                params:
+                  $NETWORK: {get_param: [ServiceNetMap, ZaqarApiNetwork]}
+          -
+            if:
+            - zaqar_workers_zero
+            - {}
+            - zaqar::wsgi::apache::workers: {get_param: ZaqarWorkers}
       service_config_settings:
         keystone:
           zaqar::keystone::auth::password: {get_param: ZaqarPassword}
@@ -72,22 +114,37 @@ outputs:
       step_config: |
         include ::tripleo::profile::base::zaqar
       upgrade_tasks:
-        - name: Check if zaqar is deployed
-          command: systemctl is-enabled openstack-zaqar
-          tags: common
-          ignore_errors: True
-          register: zaqar_enabled
-        - name: "PreUpgrade step0,validation: Check if openstack-zaqar is running"
-          shell: >
-            /usr/bin/systemctl show 'openstack-zaqar' --property ActiveState |
-            grep '\bactive\b'
-          when: zaqar_enabled.rc == 0
-          tags: step0,validation
-        - name: Stop zaqar service
-          tags: step1
-          when: zaqar_enabled.rc == 0
-          service: name=openstack-zaqar state=stopped
-        - name: Install openstack-zaqar package if it was disabled
-          tags: step3
-          yum: name=openstack-zaqar state=latest
-          when: zaqar_enabled.rc != 0
+        yaql:
+          expression: $.data.apache_upgrade + $.data.zaqar_upgrade
+          data:
+            apache_upgrade:
+              get_attr: [ApacheServiceBase, role_data, upgrade_tasks]
+            zaqar_upgrade:
+              - name: Check if zaqar is deployed
+                command: systemctl is-enabled openstack-zaqar
+                tags: common
+                ignore_errors: True
+                register: zaqar_enabled
+              - name: "PreUpgrade step0,validation: Check if openstack-zaqar is running"
+                shell: >
+                  /usr/bin/systemctl show 'openstack-zaqar' --property ActiveState |
+                  grep '\bactive\b'
+                when: zaqar_enabled.rc == 0
+                tags: step0,validation
+              - name: Check for zaqar running under apache (post upgrade)
+                tags: step1
+                shell: "httpd -t -D DUMP_VHOSTS | grep -q zaqar_wsgi"
+                register: zaqar_apache
+                ignore_errors: true
+              - name: Stop zaqar service (running under httpd)
+                tags: step1
+                service: name=httpd state=stopped
+                when: zaqar_apache.rc == 0
+              - name: Stop and disable zaqar service (pre-upgrade not under httpd)
+                tags: step1
+                when: zaqar_enabled.rc == 0
+                service: name=openstack-zaqar state=stopped enabled=no
+              - name: Install openstack-zaqar package if it was disabled
+                tags: step3
+                yum: name=openstack-zaqar state=latest
+                when: zaqar_enabled.rc != 0

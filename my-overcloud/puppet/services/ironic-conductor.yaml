@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack Ironic conductor configured with Puppet
@@ -12,6 +12,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -32,6 +40,13 @@ parameters:
                  created yet) and should be changed to an actual UUID in
                  a post-deployment stack update.
     type: string
+  IronicDefaultBootOption:
+    default: 'local'
+    description: How to boot the bare metal instances. Set to 'local' (the
+                 default) to use local bootloader (requires grub2 for partition
+                 images). Set to 'netboot' to make the instances boot from
+                 controllers using PXE/iPXE.
+    type: string
   IronicDefaultNetworkInterface:
     default: 'flat'
     description: Network interface implementation to use by default.
@@ -44,6 +59,20 @@ parameters:
   IronicEnabledDrivers:
     default: ['pxe_ipmitool', 'pxe_drac', 'pxe_ilo']
     description: Enabled Ironic drivers
+    type: comma_delimited_list
+  IronicEnabledHardwareTypes:
+    default: ['ipmi', 'redfish']
+    description: Enabled Ironic hardware types
+    type: comma_delimited_list
+  IronicEnabledManagementInterfaces:
+    default: ['ipmitool', 'redfish']
+    description: Enabled management interface implementations. Each hardware
+                 type must have at least one valid implementation enabled.
+    type: comma_delimited_list
+  IronicEnabledPowerInterfaces:
+    default: ['ipmitool', 'redfish']
+    description: Enabled power interface implementations. Each hardware
+                 type must have at least one valid implementation enabled.
     type: comma_delimited_list
   IronicIPXEEnabled:
     default: true
@@ -77,6 +106,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -91,7 +122,9 @@ outputs:
             ironic::conductor::cleaning_disk_erase: {get_param: IronicCleaningDiskErase}
             ironic::conductor::cleaning_network: {get_param: IronicCleaningNetwork}
             ironic::conductor::provisioning_network: {get_param: IronicProvisioningNetwork}
+            ironic::conductor::default_boot_option: {get_param: IronicDefaultBootOption}
             ironic::conductor::enabled_drivers: {get_param: IronicEnabledDrivers}
+            ironic::conductor::enabled_hardware_types: {get_param: IronicEnabledHardwareTypes}
             # We need an endpoint containing a real IP, not a VIP here
             ironic_conductor_http_host: {get_param: [ServiceNetMap, IronicNetwork]}
             ironic::conductor::http_url:
@@ -112,7 +145,10 @@ outputs:
             # NOTE(dtantsur): UEFI only works with iPXE currently for us
             ironic::drivers::pxe::uefi_pxe_config_template: '$pybasedir/drivers/modules/ipxe_config.template'
             ironic::drivers::pxe::uefi_pxe_bootfile_name: 'ipxe.efi'
+            ironic::drivers::interfaces::enabled_console_interfaces: ['ipmitool-socat', 'no-console']
+            ironic::drivers::interfaces::enabled_management_interfaces: {get_param: IronicEnabledManagementInterfaces}
             ironic::drivers::interfaces::enabled_network_interfaces: ['flat', 'neutron']
+            ironic::drivers::interfaces::enabled_power_interfaces: {get_param: IronicEnabledPowerInterfaces}
             ironic::drivers::interfaces::default_network_interface: {get_param: IronicDefaultNetworkInterface}
             tripleo.ironic_conductor.firewall_rules:
               '134 ironic conductor TFTP':

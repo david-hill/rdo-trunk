@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack Glance API service configured with Puppet
@@ -12,6 +12,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -129,6 +137,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
       EnableInternalTLS: {get_param: EnableInternalTLS}
 
 outputs:
@@ -144,17 +154,17 @@ outputs:
         map_merge:
           - get_attr: [TLSProxyBase, role_data, config_settings]
           - glance::api::database_connection:
-              list_join:
-                - ''
-                - - {get_param: [EndpointMap, MysqlInternal, protocol]}
-                  - '://glance:'
-                  - {get_param: GlancePassword}
-                  - '@'
-                  - {get_param: [EndpointMap, MysqlInternal, host]}
-                  - '/glance'
-                  - '?read_default_file=/etc/my.cnf.d/tripleo.cnf&read_default_group=tripleo'
+              make_url:
+                scheme: {get_param: [EndpointMap, MysqlInternal, protocol]}
+                username: glance
+                password: {get_param: GlancePassword}
+                host: {get_param: [EndpointMap, MysqlInternal, host]}
+                path: /glance
+                query:
+                  read_default_file: /etc/my.cnf.d/tripleo.cnf
+                  read_default_group: tripleo
             glance::api::bind_port: {get_param: [EndpointMap, GlanceInternal, port]}
-            glance::api::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri] }
+            glance::api::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix] }
             glance::api::authtoken::auth_url: { get_param: [EndpointMap, KeystoneInternal, uri_no_suffix] }
             glance::api::enable_v1_api: false
             glance::api::enable_v2_api: true
@@ -168,6 +178,8 @@ outputs:
                   - 9292
                   - 13292
             glance::api::authtoken::project_name: 'service'
+            glance::keystone::authtoken::user_domain_name: 'Default'
+            glance::keystone::authtoken::project_domain_name: 'Default'
             glance::api::pipeline: 'keystone'
             glance::api::show_image_direct_url: true
             # NOTE: bind IP is found in Heat replacing the network name with the
@@ -195,10 +207,11 @@ outputs:
               - {get_param: [ServiceNetMap, GlanceApiNetwork]}
             glance_notifier_strategy: {get_param: GlanceNotifierStrategy}
             glance_log_file: {get_param: GlanceLogFile}
-            glance::backend::swift::swift_store_auth_address: {get_param: [EndpointMap, KeystoneInternal, uri] }
+            glance::backend::swift::swift_store_auth_address: {get_param: [EndpointMap, KeystoneV3Internal, uri] }
             glance::backend::swift::swift_store_user: service:glance
             glance::backend::swift::swift_store_key: {get_param: GlancePassword}
             glance::backend::swift::swift_store_create_container_on_put: true
+            glance::backend::swift::swift_store_auth_version: 3
             glance::backend::rbd::rbd_store_pool: {get_param: GlanceRbdPoolName}
             glance::backend::rbd::rbd_store_user: {get_param: CephClientUserName}
             glance_backend: {get_param: GlanceBackend}

@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   HAproxy service configured with Puppet
@@ -12,6 +12,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -37,6 +45,11 @@ parameters:
   MonitoringSubscriptionHaproxy:
     default: 'overcloud-haproxy'
     type: string
+  InternalTLSCAFile:
+    default: '/etc/ipa/ca.crt'
+    type: string
+    description: Specifies the default CA cert to use if TLS is used for
+                 services in the internal network.
 
 resources:
 
@@ -46,6 +59,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
   HAProxyInternalTLS:
     type: OS::TripleO::Services::HAProxyInternalTLS
@@ -53,6 +68,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -71,6 +88,7 @@ outputs:
             tripleo::haproxy::haproxy_stats_user: {get_param: HAProxyStatsUser}
             tripleo::haproxy::haproxy_stats_password: {get_param: HAProxyStatsPassword}
             tripleo::haproxy::redis_password: {get_param: RedisPassword}
+            tripleo::haproxy::ca_bundle: {get_param: InternalTLSCAFile}
             tripleo::profile::base::haproxy::certificates_specs:
               map_merge:
                 - get_attr: [HAProxyPublicTLS, role_data, certificates_specs]
@@ -96,8 +114,6 @@ outputs:
           when: haproxy_enabled.rc == 0
           service: name=haproxy state=started
       metadata_settings:
-        yaql:
-          expression: '[].concat(coalesce($.data.internal, []), coalesce($.data.public, []))'
-          data:
-            public: {get_attr: [HAProxyPublicTLS, role_data, metadata_settings]}
-            internal: {get_attr: [HAProxyInternalTLS, role_data, metadata_settings]}
+        list_concat:
+          - {get_attr: [HAProxyPublicTLS, role_data, metadata_settings]}
+          - {get_attr: [HAProxyInternalTLS, role_data, metadata_settings]}

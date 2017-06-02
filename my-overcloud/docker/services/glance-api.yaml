@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack Glance service configured with Puppet
@@ -26,6 +26,22 @@ parameters:
   DefaultPasswords:
     default: {}
     type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
+    type: json
+  EnableInternalTLS:
+    type: boolean
+    default: false
+
+conditions:
+
+  internal_tls_enabled: {equals: [{get_param: EnableInternalTLS}, true]}
+
 
 resources:
 
@@ -38,6 +54,8 @@ resources:
       EndpointMap: {get_param: EndpointMap}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -63,36 +81,70 @@ outputs:
       kolla_config:
         /var/lib/kolla/config_files/glance-api.json:
           command: /usr/bin/glance-api --config-file /usr/share/glance/glance-api-dist.conf --config-file /etc/glance/glance-api.conf
+        /var/lib/kolla/config_files/glance_api_tls_proxy.json:
+          command: /usr/sbin/httpd -DFOREGROUND
       docker_config:
+        # Kolla_bootstrap/db_sync runs before permissions set by kolla_config
         step_3:
+          glance_init_logs:
+            start_order: 0
+            image: *glance_image
+            privileged: false
+            user: root
+            volumes:
+              - /var/log/containers/glance:/var/log/glance
+            command: ['/bin/bash', '-c', 'chown -R glance:glance /var/log/glance']
           glance_api_db_sync:
+            start_order: 1
             image: *glance_image
             net: host
             privileged: false
             detach: false
             volumes: &glance_volumes
-              yaql:
-                expression: $.data.common.concat($.data.service)
-                data:
-                  common: {get_attr: [ContainersCommon, volumes]}
-                  service:
-                    - /var/lib/kolla/config_files/glance-api.json:/var/lib/kolla/config_files/config.json
-                    - /var/lib/config-data/glance_api/etc/glance/:/etc/glance/:ro
-                    - /lib/modules:/lib/modules:ro
-                    - /run:/run
-                    - /dev:/dev
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/kolla/config_files/glance-api.json:/var/lib/kolla/config_files/config.json
+                  - /var/lib/config-data/glance_api/etc/glance/:/etc/glance/:ro
+                  - /var/log/containers/glance:/var/log/glance
             environment:
               - KOLLA_BOOTSTRAP=True
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
         step_4:
-          glance_api:
-            image: *glance_image
-            net: host
-            privileged: false
-            restart: always
-            volumes: *glance_volumes
-            environment:
-              - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+          map_merge:
+            - glance_api:
+                start_order: 2
+                image: *glance_image
+                net: host
+                privileged: false
+                restart: always
+                volumes: *glance_volumes
+                environment:
+                  - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+            - if:
+                - internal_tls_enabled
+                - glance_api_tls_proxy:
+                    start_order: 2
+                    image: *glance_image
+                    net: host
+                    user: root
+                    restart: always
+                    volumes:
+                      list_concat:
+                        - {get_attr: [ContainersCommon, volumes]}
+                        -
+                          - /var/lib/kolla/config_files/glance_api_tls_proxy.json:/var/lib/kolla/config_files/config.json:ro
+                          - /var/lib/config-data/glance_api/etc/httpd/:/etc/httpd/:ro
+                          - /etc/pki/tls/certs/httpd:/etc/pki/tls/certs/httpd:ro
+                          - /etc/pki/tls/private/httpd:/etc/pki/tls/private/httpd:ro
+                    environment:
+                      - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+                - {}
+      host_prep_tasks:
+        - name: create persistent logs directory
+          file:
+            path: /var/log/containers/glance
+            state: directory
       upgrade_tasks:
         - name: Stop and disable glance_api service
           tags: step2

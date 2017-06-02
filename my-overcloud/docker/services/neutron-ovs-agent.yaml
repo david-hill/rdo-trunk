@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack Neutron openvswitch service
@@ -12,6 +12,10 @@ parameters:
     description: image
     default: 'centos-binary-neutron-openvswitch-agent:latest'
     type: string
+  DockerNeutronConfigImage:
+    description: image
+    default: 'centos-binary-neutron-server:latest'
+    type: string
   ServiceNetMap:
     default: {}
     description: Mapping of service_name -> network name. Typically set
@@ -20,6 +24,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -38,6 +50,8 @@ resources:
       EndpointMap: {get_param: EndpointMap}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -51,33 +65,44 @@ outputs:
         config_volume: neutron
         puppet_tags: neutron_config,neutron_agent_ovs,neutron_plugin_ml2
         step_config: *step_config
-        config_image: &neutron_ovs_agent_image
+        config_image:
           list_join:
           - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerOpenvswitchImage} ]
+          - [ {get_param: DockerNamespace}, {get_param: DockerNeutronConfigImage} ]
       kolla_config:
         /var/lib/kolla/config_files/neutron-openvswitch-agent.json:
-           command: /usr/bin/neutron-openvswitch-agent --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/openvswitch_agent.ini --config-file /etc/neutron/plugins/ml2/ml2_conf.ini
+          command: /usr/bin/neutron-openvswitch-agent --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/openvswitch_agent.ini --config-file /etc/neutron/plugins/ml2/ml2_conf.ini
+          permissions:
+            - path: /var/log/neutron
+              owner: neutron:neutron
+              recurse: true
       docker_config:
         step_4:
           neutronovsagent:
-            image: *neutron_ovs_agent_image
+            image: &neutron_ovs_agent_image
+              list_join:
+              - '/'
+              - [ {get_param: DockerNamespace}, {get_param: DockerOpenvswitchImage} ]
             net: host
             pid: host
             privileged: true
             restart: always
             volumes:
-              yaql:
-                expression: $.data.common.concat($.data.service)
-                data:
-                  common: {get_attr: [ContainersCommon, volumes]}
-                  service:
-                    - /var/lib/kolla/config_files/neutron-openvswitch-agent.json:/var/lib/kolla/config_files/config.json:ro
-                    - /var/lib/config-data/neutron/etc/neutron/:/etc/neutron/:ro
-                    - /lib/modules:/lib/modules:ro
-                    - /run:/run
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/kolla/config_files/neutron-openvswitch-agent.json:/var/lib/kolla/config_files/config.json:ro
+                  - /var/lib/config-data/neutron/etc/neutron/:/etc/neutron/:ro
+                  - /lib/modules:/lib/modules:ro
+                  - /run:/run
+                  - /var/log/containers/neutron:/var/log/neutron
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+      host_prep_tasks:
+        - name: create persistent logs directory
+          file:
+            path: /var/log/containers/neutron
+            state: directory
       upgrade_tasks:
         - name: Stop and disable neutron_ovs_agent service
           tags: step2

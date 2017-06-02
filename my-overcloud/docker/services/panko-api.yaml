@@ -1,7 +1,9 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
-  OpenStack Panko service configured with docker
+  OpenStack Panko service configured with docker.
+  Note, this service is deprecated in Pike release and
+  will be disabled in future releases.
 
 parameters:
   DockerNamespace:
@@ -26,6 +28,21 @@ parameters:
   DefaultPasswords:
     default: {}
     type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
+    type: json
+  EnableInternalTLS:
+    type: boolean
+    default: false
+
+conditions:
+
+  internal_tls_enabled: {equals: [{get_param: EnableInternalTLS}, true]}
 
 resources:
 
@@ -38,6 +55,8 @@ resources:
       EndpointMap: {get_param: EndpointMap}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -63,15 +82,19 @@ outputs:
       kolla_config:
         /var/lib/kolla/config_files/panko-api.json:
           command: /usr/sbin/httpd -DFOREGROUND
+          permissions:
+            - path: /var/log/panko
+              owner: panko:panko
+              recurse: true
       docker_config:
         step_3:
           panko-init-log:
             start_order: 0
             image: *panko_image
             user: root
-            command: ['/bin/bash', '-c', 'mkdir -p /var/log/httpd && mkdir -p /var/log/panko && chown panko:panko /var/log/panko']
             volumes:
-              - logs:/var/log
+              - /var/log/containers/panko:/var/log/panko
+            command: ['/bin/bash', '-c', 'mkdir -p /var/log/httpd; chown -R panko:panko /var/log/panko']
           panko_db_sync:
             start_order: 1
             image: *panko_image
@@ -79,13 +102,11 @@ outputs:
             detach: false
             privileged: false
             volumes:
-              yaql:
-                expression: $.data.common.concat($.data.service)
-                data:
-                  common: {get_attr: [ContainersCommon, volumes]}
-                  service:
-                    - /var/lib/config-data/panko/etc/panko:/etc/panko:ro
-                    - logs:/var/log
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/config-data/panko/etc/panko:/etc/panko:ro
+                  - /var/log/containers/panko:/var/log/panko
             command: /usr/bin/panko-dbsync
         step_4:
           panko_api:
@@ -95,14 +116,30 @@ outputs:
             privileged: false
             restart: always
             volumes:
-              yaql:
-                expression: $.data.common.concat($.data.service)
-                data:
-                  common: {get_attr: [ContainersCommon, volumes]}
-                  service:
-                    - /var/lib/kolla/config_files/panko-api.json:/var/lib/kolla/config_files/config.json:ro
-                    - /var/lib/config-data/panko/etc/panko/:/etc/panko/:ro
-                    - /var/lib/config-data/panko/etc/httpd/:/etc/httpd/:ro
-                    - /var/lib/config-data/panko/var/www/:/var/www/:ro
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/kolla/config_files/panko-api.json:/var/lib/kolla/config_files/config.json:ro
+                  - /var/lib/config-data/panko/etc/panko/:/etc/panko/:ro
+                  - /var/lib/config-data/panko/etc/httpd/:/etc/httpd/:ro
+                  - /var/lib/config-data/panko/var/www/:/var/www/:ro
+                  - /var/log/containers/panko:/var/log/panko
+                  -
+                    if:
+                      - internal_tls_enabled
+                      - /etc/pki/tls/certs/httpd:/etc/pki/tls/certs/httpd:ro
+                      - ''
+                  -
+                    if:
+                      - internal_tls_enabled
+                      - /etc/pki/tls/private/httpd:/etc/pki/tls/private/httpd:ro
+                      - ''
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+      host_prep_tasks:
+        - name: create persistent logs directory
+          file:
+            path: /var/log/containers/panko
+            state: directory
+      metadata_settings:
+        get_attr: [PankoApiPuppetBase, role_data, metadata_settings]

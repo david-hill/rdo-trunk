@@ -7,8 +7,8 @@ resource_registry:
   OS::TripleO::Services::MySQL: ../../puppet/services/pacemaker/database/mysql.yaml
   OS::TripleO::Services::CinderVolume: ../../puppet/services/pacemaker/cinder-volume.yaml
   OS::TripleO::Services::Keepalived: OS::Heat::None
-  OS::TripleO::Tasks::ControllerPrePuppet: ../../extraconfig/tasks/pre_puppet_pacemaker.yaml
-  OS::TripleO::Tasks::ControllerPostPuppet: ../../extraconfig/tasks/post_puppet_pacemaker.yaml
+  OS::TripleO::Tasks::ControllerPreConfig: ../../extraconfig/tasks/pre_puppet_pacemaker.yaml
+  OS::TripleO::Tasks::ControllerPostConfig: ../../extraconfig/tasks/post_puppet_pacemaker.yaml
   OS::TripleO::Tasks::ControllerPostPuppetRestart: ../../extraconfig/tasks/post_puppet_pacemaker_restart.yaml
 
 parameter_defaults:
@@ -52,6 +52,7 @@ parameter_defaults:
     - OS::TripleO::Services::Timezone
     - OS::TripleO::Services::NovaCompute
     - OS::TripleO::Services::NovaLibvirt
+    - OS::TripleO::Services::Sshd
   ControllerExtraConfig:
     nova::compute::libvirt::services::libvirt_virt_type: qemu
     nova::compute::libvirt::libvirt_virt_type: qemu

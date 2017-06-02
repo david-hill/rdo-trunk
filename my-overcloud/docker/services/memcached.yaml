@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack containerized Memcached services
@@ -26,6 +26,14 @@ parameters:
   DefaultPasswords:
     default: {}
     type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
+    type: json
 
 resources:
 
@@ -38,6 +46,8 @@ resources:
       EndpointMap: {get_param: EndpointMap}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -60,18 +70,27 @@ outputs:
       kolla_config: {}
       docker_config:
         step_1:
+          memcached_init_logs:
+            start_order: 0
+            image: *memcached_image
+            privileged: false
+            user: root
+            volumes:
+               - /var/lib/config-data/memcached/etc/sysconfig/memcached:/etc/sysconfig/memcached:ro
+               - /var/log/memcached.log:/var/log/memcached.log
+            command: ['/bin/bash', '-c', 'source /etc/sysconfig/memcached; chown ${USER} /var/log/memcached.log']
           memcached:
+            start_order: 1
             image: *memcached_image
             net: host
             privileged: false
             restart: always
             volumes:
-              yaql:
-                expression: $.data.common.concat($.data.service)
-                data:
-                  common: {get_attr: [ContainersCommon, volumes]}
-                  service:
-                    - /var/lib/config-data/memcached/etc/sysconfig/memcached:/etc/sysconfig/memcached:ro
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/config-data/memcached/etc/sysconfig/memcached:/etc/sysconfig/memcached:ro
+            # TODO(bogdando) capture memcached syslog logs from a container
             command: ['/bin/bash', '-c', 'source /etc/sysconfig/memcached; /usr/bin/memcached -p ${PORT} -u ${USER} -m ${CACHESIZE} -c ${MAXCONN} $OPTIONS']
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS

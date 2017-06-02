@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack containerized aodh service
@@ -26,6 +26,21 @@ parameters:
   DefaultPasswords:
     default: {}
     type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
+    type: json
+  EnableInternalTLS:
+    type: boolean
+    default: false
+
+conditions:
+
+  internal_tls_enabled: {equals: [{get_param: EnableInternalTLS}, true]}
 
 resources:
 
@@ -38,6 +53,8 @@ resources:
         EndpointMap: {get_param: EndpointMap}
         ServiceNetMap: {get_param: ServiceNetMap}
         DefaultPasswords: {get_param: DefaultPasswords}
+        RoleName: {get_param: RoleName}
+        RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -63,15 +80,20 @@ outputs:
       kolla_config:
         /var/lib/kolla/config_files/aodh-api.json:
           command: /usr/sbin/httpd -DFOREGROUND
+          permissions:
+            - path: /var/log/aodh
+              owner: aodh:aodh
+              recurse: true
       docker_config:
+        # db sync runs before permissions set by kolla_config
         step_3:
           aodh_init_log:
             start_order: 0
             image: *aodh_image
             user: root
-            command: ['/bin/bash', '-c', 'mkdir -p /var/log/httpd && mkdir -p /var/log/aodh && chown aodh:aodh /var/log/aodh']
             volumes:
-              - logs:/var/log
+              - /var/log/containers/aodh:/var/log/aodh
+            command: ['/bin/bash', '-c', 'mkdir -p /var/log/httpd; chown -R aodh:aodh /var/log/aodh']
           aodh_db_sync:
             start_order: 1
             image: *aodh_image
@@ -79,13 +101,11 @@ outputs:
             privileged: false
             detach: false
             volumes:
-              yaql:
-                expression: $.data.common.concat($.data.service)
-                data:
-                  common: {get_attr: [ContainersCommon, volumes]}
-                  service:
-                    - /var/lib/config-data/aodh/etc/aodh/:/etc/aodh/:ro
-                    - logs:/var/log
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/config-data/aodh/etc/aodh/:/etc/aodh/:ro
+                  - /var/log/containers/aodh:/var/log/aodh
             command: /usr/bin/aodh-dbsync
         step_4:
           aodh_api:
@@ -94,19 +114,34 @@ outputs:
             privileged: false
             restart: always
             volumes:
-              yaql:
-                expression: $.data.common.concat($.data.service)
-                data:
-                  common: {get_attr: [ContainersCommon, volumes]}
-                  service:
-                    - /var/lib/kolla/config_files/aodh-api.json:/var/lib/kolla/config_files/config.json:ro
-                    - /var/lib/config-data/aodh/etc/aodh/:/etc/aodh/:ro
-                    - /var/lib/config-data/aodh/etc/httpd/:/etc/httpd/:ro
-                    - /var/lib/config-data/aodh/var/www/:/var/www/:ro
-                    - logs:/var/log
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/kolla/config_files/aodh-api.json:/var/lib/kolla/config_files/config.json:ro
+                  - /var/lib/config-data/aodh/etc/aodh/:/etc/aodh/:ro
+                  - /var/lib/config-data/aodh/etc/httpd/:/etc/httpd/:ro
+                  - /var/lib/config-data/aodh/var/www/:/var/www/:ro
+                  - /var/log/containers/aodh:/var/log/aodh
+                  -
+                    if:
+                      - internal_tls_enabled
+                      - /etc/pki/tls/certs/httpd:/etc/pki/tls/certs/httpd:ro
+                      - ''
+                  -
+                    if:
+                      - internal_tls_enabled
+                      - /etc/pki/tls/private/httpd:/etc/pki/tls/private/httpd:ro
+                      - ''
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+      host_prep_tasks:
+      - name: create persistent logs directory
+        file:
+          path: /var/log/containers/aodh
+          state: directory
       upgrade_tasks:
         - name: Stop and disable aodh service (running under httpd)
           tags: step2
           service: name=httpd state=stopped enabled=no
+      metadata_settings:
+        get_attr: [AodhApiPuppetBase, role_data, metadata_settings]

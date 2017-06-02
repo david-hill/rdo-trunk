@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack Neutron Server configured with Puppet
@@ -12,6 +12,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -102,6 +110,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
       EnableInternalTLS: {get_param: EnableInternalTLS}
 
   NeutronBase:
@@ -110,6 +120,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -125,15 +137,15 @@ outputs:
           - get_attr: [NeutronBase, role_data, config_settings]
           - get_attr: [TLSProxyBase, role_data, config_settings]
           - neutron::server::database_connection:
-              list_join:
-                - ''
-                - - {get_param: [EndpointMap, MysqlInternal, protocol]}
-                  - '://neutron:'
-                  - {get_param: NeutronPassword}
-                  - '@'
-                  - {get_param: [EndpointMap, MysqlInternal, host]}
-                  - '/ovs_neutron'
-                  - '?read_default_file=/etc/my.cnf.d/tripleo.cnf&read_default_group=tripleo'
+              make_url:
+                scheme: {get_param: [EndpointMap, MysqlInternal, protocol]}
+                username: neutron
+                password: {get_param: NeutronPassword}
+                host: {get_param: [EndpointMap, MysqlInternal, host]}
+                path: /ovs_neutron
+                query:
+                  read_default_file: /etc/my.cnf.d/tripleo.cnf
+                  read_default_group: tripleo
             neutron::policy::policies: {get_param: NeutronApiPolicies}
             neutron::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix] }
             neutron::keystone::authtoken::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix]}
@@ -154,6 +166,7 @@ outputs:
                   - 9696
                   - 13696
             neutron::server::router_distributed: {get_param: NeutronEnableDVR}
+            neutron::server::enable_dvr: {get_param: NeutronEnableDVR}
             # NOTE: bind IP is found in Heat replacing the network name with the local node IP
             # for the given network; replacement examples (eg. for internal_api):
             # internal_api -> IP

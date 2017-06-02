@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   Apache service configured with Puppet. Note this is typically included
@@ -22,6 +22,14 @@ parameters:
   DefaultPasswords:
     default: {}
     type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
+    type: json
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
@@ -30,6 +38,11 @@ parameters:
   EnableInternalTLS:
     type: boolean
     default: false
+  InternalTLSCAFile:
+    default: '/etc/ipa/ca.crt'
+    type: string
+    description: Specifies the default CA cert to use if TLS is used for
+                 services in the internal network.
 
 conditions:
 
@@ -64,6 +77,7 @@ outputs:
             # internal_api_uri -> [IP]
             # internal_api_subnet - > IP/CIDR
             apache::ip: {get_param: [ServiceNetMap, ApacheNetwork]}
+            apache::default_vhost: false
             apache::server_signature: 'Off'
             apache::server_tokens: 'Prod'
             apache_remote_proxy_ips_network:
@@ -75,21 +89,25 @@ outputs:
             apache::mod::prefork::serverlimit: { get_param: ApacheServerLimit }
             apache::mod::remoteip::proxy_ips:
               - "%{hiera('apache_remote_proxy_ips_network')}"
-          -
-            generate_service_certificates: true
-            tripleo::certmonger::apache_dirs::certificate_dir: '/etc/pki/tls/certs/httpd'
-            tripleo::certmonger::apache_dirs::key_dir: '/etc/pki/tls/private/httpd'
-            apache_certificates_specs:
-              map_merge:
-                repeat:
-                  template:
-                    httpd-NETWORK:
-                      service_certificate: '/etc/pki/tls/certs/httpd/httpd-NETWORK.crt'
-                      service_key: '/etc/pki/tls/private/httpd/httpd-NETWORK.key'
-                      hostname: "%{hiera('fqdn_NETWORK')}"
-                      principal: "HTTP/%{hiera('fqdn_NETWORK')}"
-                  for_each:
-                    NETWORK: {get_attr: [ApacheNetworks, value]}
+          - if:
+            - internal_tls_enabled
+            -
+              generate_service_certificates: true
+              apache::mod::ssl::ssl_ca: {get_param: InternalTLSCAFile}
+              tripleo::certmonger::apache_dirs::certificate_dir: '/etc/pki/tls/certs/httpd'
+              tripleo::certmonger::apache_dirs::key_dir: '/etc/pki/tls/private/httpd'
+              apache_certificates_specs:
+                map_merge:
+                  repeat:
+                    template:
+                      httpd-NETWORK:
+                        service_certificate: '/etc/pki/tls/certs/httpd/httpd-NETWORK.crt'
+                        service_key: '/etc/pki/tls/private/httpd/httpd-NETWORK.key'
+                        hostname: "%{hiera('fqdn_NETWORK')}"
+                        principal: "HTTP/%{hiera('fqdn_NETWORK')}"
+                    for_each:
+                      NETWORK: {get_attr: [ApacheNetworks, value]}
+            - {}
       metadata_settings:
         if:
           - internal_tls_enabled
@@ -112,3 +130,6 @@ outputs:
           shell: /usr/bin/systemctl show 'httpd' --property ActiveState | grep '\bactive\b'
           when: httpd_enabled.rc == 0
           tags: step0,validation
+        - name: Ensure mod_ssl package is installed
+          tags: step3
+          yum: name=mod_ssl state=latest

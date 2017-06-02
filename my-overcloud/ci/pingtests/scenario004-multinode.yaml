@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   HOT template to created resources deployed by scenario004.
@@ -123,10 +123,13 @@ resources:
     properties:
       name: default
       driver_handles_share_servers: false
+      snapshot_support: false
 
   manila_share:
     type: OS::Manila::Share
     properties:
+      name: pingtest
+      share_type: { get_resource: manila_share_type }
       share_protocol: CEPHFS
       size: 1
 

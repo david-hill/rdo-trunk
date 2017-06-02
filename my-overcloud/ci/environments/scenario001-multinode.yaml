@@ -4,6 +4,7 @@ resource_registry:
   OS::TripleO::Services::CephMon: ../../puppet/services/ceph-mon.yaml
   OS::TripleO::Services::CephOSD: ../../puppet/services/ceph-osd.yaml
   OS::TripleO::Services::CephClient: ../../puppet/services/ceph-client.yaml
+  OS::TripleO::Services::PankoApi: ../../puppet/services/panko-api.yaml
   OS::TripleO::Services::Collectd: ../../puppet/services/metrics/collectd.yaml
   OS::TripleO::Services::Tacker: ../../puppet/services/tacker.yaml
   OS::TripleO::Services::Congress: ../../puppet/services/congress.yaml
@@ -15,11 +16,11 @@ resource_registry:
   OS::TripleO::Services::CinderBackup: ../../puppet/services/pacemaker/cinder-backup.yaml
   OS::TripleO::Services::CinderVolume: ../../puppet/services/pacemaker/cinder-volume.yaml
   OS::TripleO::Services::Keepalived: OS::Heat::None
-  OS::TripleO::Tasks::ControllerPrePuppet: ../../extraconfig/tasks/pre_puppet_pacemaker.yaml
-  OS::TripleO::Tasks::ControllerPostPuppet: ../../extraconfig/tasks/post_puppet_pacemaker.yaml
+  OS::TripleO::Tasks::ControllerPreConfig: ../../extraconfig/tasks/pre_puppet_pacemaker.yaml
+  OS::TripleO::Tasks::ControllerPostConfig: ../../extraconfig/tasks/post_puppet_pacemaker.yaml
   OS::TripleO::Tasks::ControllerPostPuppetRestart: ../../extraconfig/tasks/post_puppet_pacemaker_restart.yaml
-  OS::TripleO::Services::FluentdClient: /usr/share/openstack-tripleo-heat-templates/puppet/services/logging/fluentd-client.yaml
-  OS::TripleO::Services::SensuClient: /usr/share/openstack-tripleo-heat-templates/puppet/services/monitoring/sensu-client.yaml
+  OS::TripleO::Services::FluentdClient: ../../puppet/services/logging/fluentd-client.yaml
+  OS::TripleO::Services::SensuClient: ../../puppet/services/monitoring/sensu-client.yaml
 
 parameter_defaults:
   ControllerServices:
@@ -62,9 +63,6 @@ parameter_defaults:
     - OS::TripleO::Services::AodhEvaluator
     - OS::TripleO::Services::AodhNotifier
     - OS::TripleO::Services::AodhListener
-    - OS::TripleO::Services::CeilometerApi
-    - OS::TripleO::Services::CeilometerCollector
-    - OS::TripleO::Services::CeilometerExpirer
     - OS::TripleO::Services::CeilometerAgentCentral
     - OS::TripleO::Services::CeilometerAgentIpmi
     - OS::TripleO::Services::CeilometerAgentNotification

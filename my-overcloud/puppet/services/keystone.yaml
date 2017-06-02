@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack Keystone service configured with Puppet
@@ -46,6 +46,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -183,6 +191,8 @@ resources:
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
       EnableInternalTLS: {get_param: EnableInternalTLS}
 
 conditions:
@@ -202,15 +212,15 @@ outputs:
         map_merge:
           - get_attr: [ApacheServiceBase, role_data, config_settings]
           - keystone::database_connection:
-              list_join:
-                - ''
-                - - {get_param: [EndpointMap, MysqlInternal, protocol]}
-                  - '://keystone:'
-                  - {get_param: AdminToken}
-                  - '@'
-                  - {get_param: [EndpointMap, MysqlInternal, host]}
-                  - '/keystone'
-                  - '?read_default_file=/etc/my.cnf.d/tripleo.cnf&read_default_group=tripleo'
+              make_url:
+                scheme: {get_param: [EndpointMap, MysqlInternal, protocol]}
+                username: keystone
+                password: {get_param: AdminToken}
+                host: {get_param: [EndpointMap, MysqlInternal, host]}
+                path: /keystone
+                query:
+                  read_default_file: /etc/my.cnf.d/tripleo.cnf
+                  read_default_group: tripleo
             keystone::admin_token: {get_param: AdminToken}
             keystone::admin_password: {get_param: AdminPassword}
             keystone::roles::admin::password: {get_param: AdminPassword}
@@ -231,6 +241,7 @@ outputs:
                 content: {get_param: KeystoneFernetKey0}
               '/etc/keystone/fernet-keys/1':
                 content: {get_param: KeystoneFernetKey1}
+            keystone::fernet_replace_keys: false
             keystone::debug: {get_param: Debug}
             keystone::rabbit_userid: {get_param: RabbitUserName}
             keystone::rabbit_password: {get_param: RabbitPassword}
@@ -339,10 +350,15 @@ outputs:
             horizon::keystone_multidomain_support: true
             horizon::keystone_default_domain: 'Default'
           - {}
-      # Ansible tasks to handle upgrade
-      upgrade_tasks:
-        - name: Stop keystone service (running under httpd)
-          tags: step1
-          service: name=httpd state=stopped
       metadata_settings:
         get_attr: [ApacheServiceBase, role_data, metadata_settings]
+      upgrade_tasks:
+        yaql:
+          expression: $.data.apache_upgrade + $.data.keystone_upgrade
+          data:
+            apache_upgrade:
+              get_attr: [ApacheServiceBase, role_data, upgrade_tasks]
+            keystone_upgrade:
+              - name: Stop keystone service (running under httpd)
+                tags: step1
+                service: name=httpd state=stopped

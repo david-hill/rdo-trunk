@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   Mapping of service_name_network -> network name
@@ -45,6 +45,7 @@ parameters:
       GlanceApiNetwork: storage
       IronicApiNetwork: ctlplane
       IronicNetwork: ctlplane
+      IronicInspectorNetwork: ctlplane
       KeystoneAdminApiNetwork: ctlplane # allows undercloud to config endpoints
       KeystonePublicApiNetwork: internal_api
       ManilaApiNetwork: internal_api
@@ -54,6 +55,7 @@ parameters:
       HeatApiCfnNetwork: internal_api
       HeatApiCloudwatchNetwork: internal_api
       NovaApiNetwork: internal_api
+      NovaColdMigrationNetwork: ctlplane
       NovaPlacementNetwork: internal_api
       NovaMetadataNetwork: internal_api
       NovaVncProxyNetwork: internal_api

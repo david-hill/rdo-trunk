@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack Aodh service configured with Puppet
@@ -12,6 +12,14 @@ parameters:
     type: json
   DefaultPasswords:
     default: {}
+    type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
     type: json
   EndpointMap:
     default: {}
@@ -61,15 +69,15 @@ outputs:
       config_settings:
         aodh_redis_password: {get_param: RedisPassword}
         aodh::db::database_connection:
-          list_join:
-            - ''
-            - - {get_param: [EndpointMap, MysqlInternal, protocol]}
-              - '://aodh:'
-              - {get_param: AodhPassword}
-              - '@'
-              - {get_param: [EndpointMap, MysqlInternal, host]}
-              - '/aodh'
-              - '?read_default_file=/etc/my.cnf.d/tripleo.cnf&read_default_group=tripleo'
+          make_url:
+            scheme: {get_param: [EndpointMap, MysqlInternal, protocol]}
+            username: aodh
+            password: {get_param: AodhPassword}
+            host: {get_param: [EndpointMap, MysqlInternal, host]}
+            path: /aodh
+            query:
+              read_default_file: /etc/my.cnf.d/tripleo.cnf
+              read_default_group: tripleo
         aodh::debug: {get_param: Debug}
         aodh::auth::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix] }
         aodh::rabbit_userid: {get_param: RabbitUserName}
@@ -83,7 +91,7 @@ outputs:
         aodh::keystone::authtoken::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix] }
         aodh::keystone::authtoken::auth_url: { get_param: [EndpointMap, KeystoneInternal, uri_no_suffix] }
         aodh::auth::auth_password: {get_param: AodhPassword}
-        aodh::auth::auth_region: 'regionOne'
+        aodh::auth::auth_region: {get_param: KeystoneRegion}
         aodh::auth::auth_tenant_name: 'service'
       service_config_settings:
         keystone:

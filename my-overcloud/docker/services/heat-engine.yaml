@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack containerized Heat Engine service
@@ -26,6 +26,14 @@ parameters:
   DefaultPasswords:
     default: {}
     type: json
+  RoleName:
+    default: ''
+    description: Role name on which the service is applied
+    type: string
+  RoleParameters:
+    default: {}
+    description: Parameters specific to the role
+    type: json
 
 
 resources:
@@ -39,6 +47,8 @@ resources:
       EndpointMap: {get_param: EndpointMap}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
+      RoleName: {get_param: RoleName}
+      RoleParameters: {get_param: RoleParameters}
 
 outputs:
   role_data:
@@ -64,20 +74,32 @@ outputs:
       kolla_config:
         /var/lib/kolla/config_files/heat_engine.json:
           command: /usr/bin/heat-engine --config-file /usr/share/heat/heat-dist.conf --config-file /etc/heat/heat.conf
+          permissions:
+            - path: /var/log/heat
+              owner: heat:heat
+              recurse: true
       docker_config:
+        # db sync runs before permissions set by kolla_config
         step_3:
+          heat_init_log:
+            start_order: 0
+            image: *heat_engine_image
+            user: root
+            volumes:
+              - /var/log/containers/heat:/var/log/heat
+            command: ['/bin/bash', '-c', 'chown -R heat:heat /var/log/heat']
           heat_engine_db_sync:
+            start_order: 1
             image: *heat_engine_image
             net: host
             privileged: false
             detach: false
             volumes:
-              yaql:
-                expression: $.data.common.concat($.data.service)
-                data:
-                  common: {get_attr: [ContainersCommon, volumes]}
-                  service:
-                    - /var/lib/config-data/heat/etc/heat/:/etc/heat/:ro
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/config-data/heat/etc/heat/:/etc/heat/:ro
+                  - /var/log/containers/heat:/var/log/heat
             command: ['heat-manage', 'db_sync']
         step_4:
           heat_engine:
@@ -86,16 +108,19 @@ outputs:
             privileged: false
             restart: always
             volumes:
-              yaql:
-                expression: $.data.common.concat($.data.service)
-                data:
-                  common: {get_attr: [ContainersCommon, volumes]}
-                  service:
-                    - /var/lib/kolla/config_files/heat_engine.json:/var/lib/kolla/config_files/config.json:ro
-                    - /var/lib/config-data/heat/etc/heat/:/etc/heat/:ro
-                    - /run:/run
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/kolla/config_files/heat_engine.json:/var/lib/kolla/config_files/config.json:ro
+                  - /var/lib/config-data/heat/etc/heat/:/etc/heat/:ro
+                  - /var/log/containers/heat:/var/log/heat
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+      host_prep_tasks:
+        - name: create persistent logs directory
+          file:
+            path: /var/log/containers/heat
+            state: directory
       upgrade_tasks:
         - name: Stop and disable heat_engine service
           tags: step2

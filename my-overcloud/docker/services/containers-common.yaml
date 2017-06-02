@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   Contains a static list of common things necessary for containers
@@ -14,3 +14,5 @@ outputs:
       - /etc/pki/tls/certs/ca-bundle.crt:/etc/pki/tls/certs/ca-bundle.crt:ro
       - /etc/pki/tls/certs/ca-bundle.trust.crt:/etc/pki/tls/certs/ca-bundle.trust.crt:ro
       - /etc/pki/tls/cert.pem:/etc/pki/tls/cert.pem:ro
+      # Syslog socket
+      - /dev/log:/dev/log

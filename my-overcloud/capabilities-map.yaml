@@ -362,9 +362,14 @@ topics:
             description: Enable FOS in the overcloud
             requires:
               - overcloud-resource-registry-puppet.yaml
+          - file: environments/neutron-nsx.yaml
+            title: Deploy NSX Services
+            description:
+            requires:
+              - overcloud-resource-registry-puppet.yaml
           - file: environments/neutron-l2gw.yaml
             title: Neutron L2 gateway Service Plugin
-            description: Enables Neutron L2 gateway Service Plugin
+            description: Enables Neutron L2 gateway Service Plugin and Agent
             requires:
               - overcloud-resource-registry-puppet.yaml
 
@@ -399,6 +404,11 @@ topics:
         description: >
           Enable various Cinder backends
         environments:
+          - file: environments/cinder-pure-config.yaml
+            title: Cinder Pure Storage FlashArray backend
+            description:
+            requires:
+              - overcloud-resource-registry-puppet.yaml
           - file: environments/cinder-netapp-config.yaml
             title: Cinder NetApp backend
             description:
