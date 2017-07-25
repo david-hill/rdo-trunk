@@ -4,23 +4,21 @@ description: >
   OpenStack containerized Heat API service
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerHeatApiImage:
     description: image
-    default: 'centos-binary-heat-api:latest'
     type: string
   # puppet needs the heat-wsgi-api binary from centos-binary-heat-api
-  DockerHeatConfigImage:
-    description: image
-    default: 'centos-binary-heat-api:latest'
+  DockerHeatApiConfigImage:
+    description: The container image to use for the heat_api config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -56,6 +54,7 @@ resources:
     type: ../../puppet/services/heat-api.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -78,13 +77,15 @@ outputs:
         config_volume: heat_api
         puppet_tags: heat_config,file,concat,file_line
         step_config: *step_config
-        config_image:
-          list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerHeatConfigImage} ]
+        config_image: {get_param: DockerHeatApiConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/heat_api.json:
           command: /usr/sbin/httpd -DFOREGROUND
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
           permissions:
             - path: /var/log/heat
               owner: heat:heat
@@ -92,10 +93,7 @@ outputs:
       docker_config:
         step_4:
           heat_api:
-            image:
-              list_join:
-                - '/'
-                - [ {get_param: DockerNamespace}, {get_param: DockerHeatApiImage} ]
+            image: {get_param: DockerHeatApiImage}
             net: host
             privileged: false
             restart: always
@@ -107,9 +105,7 @@ outputs:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
                   - /var/lib/kolla/config_files/heat_api.json:/var/lib/kolla/config_files/config.json:ro
-                  - /var/lib/config-data/heat_api/etc/heat/:/etc/heat/:ro
-                  - /var/lib/config-data/heat_api/etc/httpd/:/etc/httpd/:ro
-                  - /var/lib/config-data/heat_api/var/www/:/var/www/:ro
+                  - /var/lib/config-data/puppet-generated/heat_api/:/var/lib/kolla/config_files/src:ro
                   - /var/log/containers/heat:/var/log/heat
                   -
                     if:
@@ -132,3 +128,5 @@ outputs:
         - name: Stop and disable heat_api service
           tags: step2
           service: name=httpd state=stopped enabled=no
+      metadata_settings:
+        get_attr: [HeatBase, role_data, metadata_settings]

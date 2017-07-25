@@ -4,14 +4,16 @@ description: >
   OpenStack containerized Nova Compute service
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerNovaComputeImage:
     description: image
-    default: 'centos-binary-nova-compute:latest'
     type: string
+  DockerNovaLibvirtConfigImage:
+    description: The container image to use for the nova_libvirt config_volume
+    type: string
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
+    type: json
   ServiceNetMap:
     default: {}
     description: Mapping of service_name -> network name. Typically set
@@ -44,6 +46,7 @@ resources:
     type: ../../puppet/services/nova-compute.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -69,13 +72,15 @@ outputs:
         config_volume: nova_libvirt
         puppet_tags: nova_config,nova_paste_api_ini
         step_config: *step_config
-        config_image: &nova_compute_image
-          list_join:
-          - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerNovaComputeImage} ]
+        config_image: {get_param: DockerNovaLibvirtConfigImage}
       kolla_config:
-        /var/lib/kolla/config_files/nova-compute.json:
+        /var/lib/kolla/config_files/nova_compute.json:
           command: /usr/bin/nova-compute --config-file /etc/nova/nova.conf --config-file /etc/nova/rootwrap.conf
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
           permissions:
             - path: /var/log/nova
               owner: nova:nova
@@ -86,18 +91,18 @@ outputs:
       docker_config:
         # FIXME: run discover hosts here
         step_4:
-          novacompute:
-            image: *nova_compute_image
+          nova_compute:
+            image: &nova_compute_image {get_param: DockerNovaComputeImage}
             net: host
             privileged: true
-            user: root
+            user: nova
             restart: always
             volumes:
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
-                  - /var/lib/kolla/config_files/nova-compute.json:/var/lib/kolla/config_files/config.json:ro
-                  - /var/lib/config-data/nova_libvirt/etc/nova/:/etc/nova/:ro
+                  - /var/lib/kolla/config_files/nova_compute.json:/var/lib/kolla/config_files/config.json:ro
+                  - /var/lib/config-data/puppet-generated/nova_libvirt/:/var/lib/kolla/config_files/src:ro
                   - /dev:/dev
                   - /etc/iscsi:/etc/iscsi
                   - /lib/modules:/lib/modules:ro

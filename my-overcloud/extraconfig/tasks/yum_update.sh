@@ -49,7 +49,7 @@ fi
 # of packages to update (the check for -z "$update_identifier" guarantees that this
 # is run only on overcloud stack update -i)
 if [[ "$pacemaker_status" == "active" && \
-        "$(hiera -c /etc/puppet/hiera.yaml pacemaker_short_bootstrap_node_name)" == "$(facter hostname)" ]] ; then \
+        "$(hiera -c /etc/puppet/hiera.yaml pacemaker_short_bootstrap_node_name | tr '[:upper:]' '[:lower:]')" == "$(facter hostname | tr '[:upper:]' '[:lower:]')" ]] ; then \
     # OCF scripts don't cope with -eu
     echo "Verifying if we need to fix up any IPv6 VIPs"
     set +eu
@@ -63,6 +63,9 @@ if [[ "$pacemaker_status" == "active" && \
 fi
 
 command_arguments=${command_arguments:-}
+
+# Always ensure yum has full cache
+yum makecache || echo "Yum makecache failed. This can cause failure later on."
 
 # yum check-update exits 100 if updates are available
 set +e
@@ -93,6 +96,7 @@ if [[ "$pacemaker_status" == "active" ]] ; then
     fi
 else
     echo "Upgrading openstack-puppet-modules and its dependencies"
+    check_for_yum_lock
     yum -q -y update openstack-puppet-modules
     yum deplist openstack-puppet-modules | awk '/dependency/{print $2}' | xargs yum -q -y update
     echo "Upgrading other packages is handled by config management tooling"
@@ -102,8 +106,9 @@ fi
 
 command=${command:-update}
 full_command="yum -q -y $command $command_arguments"
-echo "Running: $full_command"
 
+echo "Running: $full_command"
+check_for_yum_lock
 result=$($full_command)
 return_code=$?
 echo "$result"

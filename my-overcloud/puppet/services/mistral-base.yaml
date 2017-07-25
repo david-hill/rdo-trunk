@@ -4,6 +4,10 @@ description: >
   Openstack Mistral base service. Shared for all Mistral services.
 
 parameters:
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
+    type: json
   ServiceNetMap:
     default: {}
     description: Mapping of service_name -> network name. Typically set
@@ -31,6 +35,10 @@ parameters:
     default: ''
     description: Set to True to enable debugging on all services.
     type: string
+  MistralDebug:
+    default: ''
+    description: Set to True to enable debugging Mistral services.
+    type: string
   RabbitPassword:
     description: The password for RabbitMQ
     type: string
@@ -57,6 +65,15 @@ parameters:
     type: string
     default: 'regionOne'
     description: Keystone region for endpoint
+  NotificationDriver:
+    type: string
+    default: 'messagingv2'
+    description: Driver or drivers to handle sending notifications.
+    constraints:
+      - allowed_values: [ 'messagingv2', 'noop' ]
+
+conditions:
+  service_debug_unset: {equals : [{get_param: MistralDebug}, '']}
 
 outputs:
   role_data:
@@ -74,11 +91,16 @@ outputs:
             query:
               read_default_file: /etc/my.cnf.d/tripleo.cnf
               read_default_group: tripleo
+        mistral::notification_driver: {get_param: NotificationDriver}
         mistral::rabbit_userid: {get_param: RabbitUserName}
         mistral::rabbit_password: {get_param: RabbitPassword}
         mistral::rabbit_use_ssl: {get_param: RabbitClientUseSSL}
         mistral::rabbit_port: {get_param: RabbitClientPort}
-        mistral::debug: {get_param: Debug}
+        mistral::debug:
+          if:
+          - service_debug_unset
+          - {get_param: Debug }
+          - {get_param: MistralDebug }
         mistral::keystone_password: {get_param: MistralPassword}
         mistral::keystone_tenant: 'service'
         mistral::auth_uri: {get_param: [EndpointMap, KeystoneInternal, uri]}

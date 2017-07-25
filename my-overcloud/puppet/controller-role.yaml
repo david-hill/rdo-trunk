@@ -27,10 +27,6 @@ parameters:
     default: ''
     description: Set to True to enable debugging on all services.
     type: string
-  EnableLoadBalancer:
-    default: true
-    description: Whether to deploy a LoadBalancer on the Controller
-    type: boolean
   ExtraConfig:
     default: {}
     description: |
@@ -58,9 +54,13 @@ parameters:
     type: string
     constraints:
       - custom_constraint: nova.keypair
+  NeutronPhysicalBridge:
+    default: 'br-ex'
+    description: An OVS bridge to create for accessing external networks.
+    type: string
   NeutronPublicInterface:
     default: nic1
-    description: What interface to bridge onto br-ex for network nodes.
+    description: Which interface to add to the NeutronPhysicalBridge.
     type: string
   ServiceNetMap:
     default: {}
@@ -104,8 +104,8 @@ parameters:
     default: 'localdomain'
     type: string
     description: >
-      The DNS domain used for the hosts. This should match the dhcp_domain
-      configured in the Undercloud neutron. Defaults to localdomain.
+      The DNS domain used for the hosts. This must match the
+      overcloud_domain_name configured on the undercloud.
   ControllerServerMetadata:
     default: {}
     description: >
@@ -164,12 +164,55 @@ parameters:
       major-upgrade-composable-steps.yaml and major-upgrade-converge.yaml
       environment files.
     default: ''
+  DeploymentServerBlacklistDict:
+    default: {}
+    type: json
+    description: >
+      Map of server hostnames to blacklist from any triggered
+      deployments. If the value is 1, the server will be blacklisted. This
+      parameter is generated from the parent template.
+  RoleParameters:
+    type: json
+    description: Role Specific Parameters
+    default: {}
+  DeploymentSwiftDataMap:
+    type: json
+    description: |
+      Map of servers to Swift container and object for storing deployment data.
+      The keys are the Heat assigned hostnames, and the value is a map of the
+      container/object name in Swift. Example value:
+        overcloud-controller-0:
+          container: overcloud-controller
+          object: 0
+        overcloud-controller-1:
+          container: overcloud-controller
+          object: 1
+        overcloud-controller-2:
+          container: overcloud-controller
+          object: 2
+        overcloud-novacompute-0:
+          container: overcloud-compute
+          object: 0
+    default: {}
 
 parameter_groups:
 - label: deprecated
   description: Do not use deprecated params, they will be removed.
   parameters:
   - controllerExtraConfig
+
+conditions:
+  server_not_blacklisted:
+    not:
+      equals:
+        - {get_param: [DeploymentServerBlacklistDict, {get_param: Hostname}]}
+        - 1
+  deployment_swift_data_map_unset:
+    equals:
+      - get_param:
+          - DeploymentSwiftDataMap
+          - {get_param: Hostname}
+      - ""
 
 resources:
 
@@ -199,6 +242,12 @@ resources:
           - {get_param: ControllerServerMetadata}
           - {get_param: ServiceMetadataSettings}
       scheduler_hints: {get_param: ControllerSchedulerHints}
+      deployment_swift_data:
+        if:
+          - deployment_swift_data_map_unset
+          - {}
+          - {get_param: [DeploymentSwiftDataMap,
+                         {get_param: Hostname}]}
 
   # Combine the NodeAdminUserData and NodeUserData mime archives
   UserData:
@@ -386,6 +435,9 @@ resources:
     type: OS::TripleO::Controller::PreNetworkConfig
     properties:
       server: {get_resource: Controller}
+      RoleParameters: {get_param: RoleParameters}
+      ServiceNames: {get_param: ServiceNames}
+      deployment_actions: {get_attr: [DeploymentActions, value]}
 
   NetworkConfig:
     type: OS::TripleO::Controller::Net::SoftwareConfig
@@ -405,9 +457,13 @@ resources:
       name: NetworkDeployment
       config: {get_resource: NetworkConfig}
       server: {get_resource: Controller}
-      actions: {get_param: NetworkDeploymentActions}
+      actions:
+        if:
+          - server_not_blacklisted
+          - {get_param: NetworkDeploymentActions}
+          - []
       input_values:
-        bridge_name: br-ex
+        bridge_name: {get_param: NeutronPhysicalBridge}
         interface_name: {get_param: NeutronPublicInterface}
 
   # Resource for site-specific injection of root certificate
@@ -444,6 +500,11 @@ resources:
     depends_on: NetworkDeployment
     properties:
       name: ControllerUpgradeInitDeployment
+      actions:
+        if:
+          - server_not_blacklisted
+          - ['CREATE', 'UPDATE']
+          - []
       server: {get_resource: Controller}
       config: {get_resource: ControllerUpgradeInitConfig}
 
@@ -452,11 +513,14 @@ resources:
     depends_on: ControllerUpgradeInitDeployment
     properties:
       name: ControllerDeployment
+      actions:
+        if:
+          - server_not_blacklisted
+          - ['CREATE', 'UPDATE']
+          - []
       config: {get_resource: ControllerConfig}
       server: {get_resource: Controller}
       input_values:
-        bootstack_nodeid: {get_attr: [Controller, name]}
-        enable_load_balancer: {get_param: EnableLoadBalancer}
         enable_package_upgrade: {get_attr: [UpdateDeployment, update_managed_packages]}
 
   # Map heat metadata into hiera datafiles
@@ -468,6 +532,7 @@ resources:
         hierarchy:
           - '"%{::uuid}"'
           - heat_config_%{::deploy_config_name}
+          - config_step
           - controller_extraconfig
           - extraconfig
           - service_configs
@@ -497,11 +562,6 @@ resources:
               - {get_param: ControllerExtraConfig}
           extraconfig: {get_param: ExtraConfig}
           controller:
-            # data supplied directly to this deployment configuration, etc
-            bootstack_nodeid: {get_input: bootstack_nodeid}
-            # Pacemaker
-            enable_load_balancer: {get_input: enable_load_balancer}
-
             # Misc
             tripleo::haproxy::service_certificate: {get_attr: [NodeTLSData, deployed_ssl_certificate_path]}
             tripleo::packages::enable_upgrade: {get_input: enable_package_upgrade}
@@ -511,11 +571,15 @@ resources:
             fqdn_tenant: {get_attr: [NetHostMap, value, tenant, fqdn]}
             fqdn_management: {get_attr: [NetHostMap, value, management, fqdn]}
             fqdn_ctlplane: {get_attr: [NetHostMap, value, ctlplane, fqdn]}
+            fqdn_external: {get_attr: [NetHostMap, value, external, fqdn]}
 
   # Hook for site-specific additional pre-deployment config, e.g extra hieradata
   ControllerExtraConfigPre:
     depends_on: ControllerDeployment
     type: OS::TripleO::ControllerExtraConfigPre
+    # We have to use conditions here so that we don't break backwards
+    # compatibility with templates everywhere
+    condition: server_not_blacklisted
     properties:
         server: {get_resource: Controller}
 
@@ -524,6 +588,9 @@ resources:
   NodeExtraConfig:
     depends_on: [ControllerExtraConfigPre, NodeTLSData]
     type: OS::TripleO::NodeExtraConfig
+    # We have to use conditions here so that we don't break backwards
+    # compatibility with templates everywhere
+    condition: server_not_blacklisted
     properties:
         server: {get_resource: Controller}
 
@@ -535,17 +602,32 @@ resources:
     depends_on: NetworkDeployment
     properties:
       name: UpdateDeployment
+      actions:
+        if:
+          - server_not_blacklisted
+          - ['CREATE', 'UPDATE']
+          - []
       config: {get_resource: UpdateConfig}
       server: {get_resource: Controller}
       input_values:
         update_identifier:
           get_param: UpdateIdentifier
 
+  DeploymentActions:
+    type: OS::Heat::Value
+    properties:
+      value:
+        if:
+          - server_not_blacklisted
+          - ['CREATE', 'UPDATE']
+          - []
+
   SshHostPubKey:
     type: OS::TripleO::Ssh::HostPubKey
     depends_on: ControllerDeployment
     properties:
         server: {get_resource: Controller}
+        deployment_actions: {get_attr: [DeploymentActions, value]}
 
 outputs:
   ip_address:
@@ -569,6 +651,45 @@ outputs:
   management_ip_address:
     description: IP address of the server in the management network
     value: {get_attr: [ManagementPort, ip_address]}
+  deployed_server_port_map:
+    description:
+      Map of Heat created hostname of the server to ip address. This is the
+      hostname before it has been mapped with the HostnameMap parameter, and
+      the IP address from the ctlplane network. This map can be used to construct
+      the DeployedServerPortMap parameter when using split-stack.
+    value:
+      map_replace:
+        - hostname:
+            fixed_ips:
+              - ip_address: {get_attr: [Controller, networks, ctlplane, 0]}
+        - keys:
+            hostname:
+              list_join:
+                - '-'
+                - - {get_param: Hostname}
+                  - ctlplane
+  deployed_server_deployment_swift_data_map:
+    description:
+      Map of Heat created hostname of the server to the Swift container and object
+      used to created the temporary url for metadata polling with
+      os-collect-config.
+    value:
+      map_replace:
+        - hostname:
+            container:
+              str_split:
+                - '/'
+                - {get_attr: [Controller, os_collect_config, request, metadata_url]}
+                - 5
+            object:
+              str_split:
+                - '?'
+                - str_split:
+                    - '/'
+                    - {get_attr: [Controller, os_collect_config, request, metadata_url]}
+                    - 6
+                - 0
+        - keys: {hostname: {get_param: Hostname}}
   hostname:
     description: Hostname of the server
     value: {get_attr: [Controller, name]}
@@ -649,9 +770,13 @@ CTLPLANEIP,CTLPLANEHOST.DOMAIN,CTLPLANEHOST HOSTSSHPUBKEY"
     description: Heat resource handle for the Nova compute server
     value:
       {get_resource: Controller}
+    condition: server_not_blacklisted
   tls_key_modulus_md5:
     description: MD5 checksum of the TLS Key Modulus
     value: {get_attr: [NodeTLSData, key_modulus_md5]}
   tls_cert_modulus_md5:
     description: MD5 checksum of the TLS Certificate Modulus
     value: {get_attr: [NodeTLSData, cert_modulus_md5]}
+  os_collect_config:
+    description: The os-collect-config configuration associated with this server resource
+    value: {get_attr: [Controller, os_collect_config]}

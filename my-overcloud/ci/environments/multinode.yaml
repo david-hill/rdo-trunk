@@ -10,6 +10,9 @@ resource_registry:
   OS::TripleO::Tasks::ControllerPreConfig: ../../extraconfig/tasks/pre_puppet_pacemaker.yaml
   OS::TripleO::Tasks::ControllerPostConfig: ../../extraconfig/tasks/post_puppet_pacemaker.yaml
   OS::TripleO::Tasks::ControllerPostPuppetRestart: ../../extraconfig/tasks/post_puppet_pacemaker_restart.yaml
+  # Some infra instances don't pass the ping test but are otherwise working.
+  # Since the OVB jobs also test this functionality we can shut it off here.
+  OS::TripleO::AllNodes::Validation: ../common/all-nodes-validation-disabled.yaml
 
 parameter_defaults:
   ControllerServices:
@@ -52,6 +55,8 @@ parameter_defaults:
     - OS::TripleO::Services::Timezone
     - OS::TripleO::Services::NovaCompute
     - OS::TripleO::Services::NovaLibvirt
+    - OS::TripleO::Services::Horizon
+    - OS::TripleO::Services::TripleoFirewall
     - OS::TripleO::Services::Sshd
   ControllerExtraConfig:
     nova::compute::libvirt::services::libvirt_virt_type: qemu
@@ -64,3 +69,4 @@ parameter_defaults:
     ceph::profile::params::osd_max_object_namespace_len: 64
   SwiftCeilometerPipelineEnabled: False
   Debug: True
+  NotificationDriver: 'noop'

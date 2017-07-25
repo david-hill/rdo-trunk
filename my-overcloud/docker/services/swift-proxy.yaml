@@ -4,18 +4,20 @@ description: >
   OpenStack containerized swift proxy service
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerSwiftProxyImage:
     description: image
-    default: 'centos-binary-swift-proxy-server:latest'
+    type: string
+  DockerSwiftConfigImage:
+    description: The container image to use for the swift config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -51,6 +53,7 @@ resources:
     type: ../../puppet/services/swift-proxy.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -70,24 +73,31 @@ outputs:
         config_volume: swift
         puppet_tags: swift_proxy_config
         step_config: *step_config
-        config_image: &swift_proxy_image
-          list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerSwiftProxyImage} ]
+        config_image: {get_param: DockerSwiftConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/swift_proxy.json:
           command: /usr/bin/swift-proxy-server /etc/swift/proxy-server.conf
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
           permissions:
             - path: /var/log/swift
               owner: swift:swift
               recurse: true
         /var/lib/kolla/config_files/swift_proxy_tls_proxy.json:
           command: /usr/sbin/httpd -DFOREGROUND
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
       docker_config:
         step_4:
           map_merge:
             - swift_proxy:
-                image: *swift_proxy_image
+                image: &swift_proxy_image {get_param: DockerSwiftProxyImage}
                 net: host
                 user: swift
                 restart: always
@@ -96,9 +106,7 @@ outputs:
                     - {get_attr: [ContainersCommon, volumes]}
                     -
                       - /var/lib/kolla/config_files/swift_proxy.json:/var/lib/kolla/config_files/config.json:ro
-                      # FIXME I'm mounting /etc/swift as rw.  Are the rings written to
-                      # at all during runtime?
-                      - /var/lib/config-data/swift/etc/swift:/etc/swift:rw
+                      - /var/lib/config-data/puppet-generated/swift/:/var/lib/kolla/config_files/src:ro
                       - /run:/run
                       - /srv/node:/srv/node
                       - /dev:/dev
@@ -117,7 +125,7 @@ outputs:
                         - {get_attr: [ContainersCommon, volumes]}
                         -
                           - /var/lib/kolla/config_files/swift_proxy_tls_proxy.json:/var/lib/kolla/config_files/config.json:ro
-                          - /var/lib/config-data/swift/etc/httpd/:/etc/httpd/:ro
+                          - /var/lib/config-data/puppet-generated/swift/:/var/lib/kolla/config_files/src:ro
                           - /etc/pki/tls/certs/httpd:/etc/pki/tls/certs/httpd:ro
                           - /etc/pki/tls/private/httpd:/etc/pki/tls/private/httpd:ro
                     environment:
@@ -135,3 +143,5 @@ outputs:
         - name: Stop and disable swift_proxy service
           tags: step2
           service: name=openstack-swift-proxy state=stopped enabled=no
+      metadata_settings:
+        get_attr: [SwiftProxyBase, role_data, metadata_settings]

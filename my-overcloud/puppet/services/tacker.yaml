@@ -4,6 +4,10 @@ description: >
   OpenStack Tacker service configured with Puppet
 
 parameters:
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
+    type: json
   ServiceNetMap:
     default: {}
     description: Mapping of service_name -> network name. Typically set
@@ -33,6 +37,10 @@ parameters:
   Debug:
     type: string
     default: ''
+  TackerDebug:
+    default: ''
+    description: Set to True to enable debugging Tacker service.
+    type: string
   KeystoneRegion:
     type: string
     default: 'regionOne'
@@ -61,6 +69,15 @@ parameters:
       e.g. { tacker-context_is_admin: { key: context_is_admin, value: 'role:admin' } }
     default: {}
     type: json
+  NotificationDriver:
+    type: string
+    default: 'messagingv2'
+    description: Driver or drivers to handle sending notifications.
+    constraints:
+      - allowed_values: [ 'messagingv2', 'noop' ]
+
+conditions:
+  service_debug_unset: {equals : [{get_param: TackerDebug}, '']}
 
 outputs:
   role_data:
@@ -80,8 +97,13 @@ outputs:
               read_default_file: /etc/my.cnf.d/tripleo.cnf
               read_default_group: tripleo
 
-        tacker::debug: {get_param: Debug}
+        tacker::debug:
+          if:
+          - service_debug_unset
+          - {get_param: Debug }
+          - {get_param: TackerDebug }
         tacker::rpc_backend: rabbit
+        tacker::notification_driver: {get_param: NotificationDriver}
         tacker::rabbit_userid: {get_param: RabbitUserName}
         tacker::rabbit_password: {get_param: RabbitPassword}
         tacker::rabbit_use_ssl: {get_param: RabbitClientUseSSL}

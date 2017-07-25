@@ -4,22 +4,20 @@ description: >
   OpenStack containerized Nova Scheduler service
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerNovaSchedulerImage:
     description: image
-    default: 'centos-binary-nova-scheduler:latest'
     type: string
   DockerNovaConfigImage:
-    description: image
-    default: 'centos-binary-nova-base:latest'
+    description: The container image to use for the nova config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -48,6 +46,7 @@ resources:
     type: ../../puppet/services/nova-scheduler.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -67,13 +66,15 @@ outputs:
         config_volume: nova
         puppet_tags: nova_config
         step_config: *step_config
-        config_image:
-          list_join:
-          - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerNovaConfigImage} ]
+        config_image: {get_param: DockerNovaConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/nova_scheduler.json:
           command: /usr/bin/nova-scheduler
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
           permissions:
             - path: /var/log/nova
               owner: nova:nova
@@ -81,10 +82,7 @@ outputs:
       docker_config:
         step_4:
           nova_scheduler:
-            image:
-              list_join:
-                - '/'
-                - [ {get_param: DockerNamespace}, {get_param: DockerNovaSchedulerImage} ]
+            image: {get_param: DockerNovaSchedulerImage}
             net: host
             privileged: false
             restart: always
@@ -93,7 +91,7 @@ outputs:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
                   - /var/lib/kolla/config_files/nova_scheduler.json:/var/lib/kolla/config_files/config.json:ro
-                  - /var/lib/config-data/nova/etc/nova/:/etc/nova/:ro
+                  - /var/lib/config-data/puppet-generated/nova/:/var/lib/kolla/config_files/src:ro
                   - /run:/run
                   - /var/log/containers/nova:/var/log/nova
             environment:

@@ -4,18 +4,20 @@ description: >
   MongoDB service deployment using puppet and docker
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerMongodbImage:
     description: image
-    default: 'centos-binary-mongodb:latest'
+    type: string
+  DockerMongodbConfigImage:
+    description: The container image to use for the mongodb config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -41,6 +43,7 @@ resources:
     type: ../../../puppet/services/database/mongodb.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -65,13 +68,15 @@ outputs:
         config_volume: mongodb
         puppet_tags: file # set this even though file is the default
         step_config: *step_config
-        config_image: &mongodb_image
-          list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerMongodbImage} ]
+        config_image: &mongodb_config_image {get_param: DockerMongodbConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/mongodb.json:
           command: /usr/bin/mongod --unixSocketPrefix=/var/run/mongodb --config /etc/mongod.conf run
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
           permissions:
             - path: /var/lib/mongodb
               owner: mongodb:mongodb
@@ -82,12 +87,12 @@ outputs:
       docker_config:
         step_2:
           mongodb:
-            image: *mongodb_image
+            image: {get_param: DockerMongodbImage}
             net: host
             privileged: false
             volumes: &mongodb_volumes
               - /var/lib/kolla/config_files/mongodb.json:/var/lib/kolla/config_files/config.json
-              - /var/lib/config-data/mongodb/etc/:/etc/:ro
+              - /var/lib/config-data/puppet-generated/mongodb/:/var/lib/kolla/config_files/src:ro
               - /etc/localtime:/etc/localtime:ro
               - /var/log/containers/mongodb:/var/log/mongodb
               - /var/lib/mongodb:/var/lib/mongodb
@@ -99,7 +104,7 @@ outputs:
           config_volume: 'mongodb_init_tasks'
           puppet_tags: 'mongodb_database,mongodb_user,mongodb_replset'
           step_config: 'include ::tripleo::profile::base::database::mongodb'
-          config_image: *mongodb_image
+          config_image: *mongodb_config_image
           volumes:
             - /var/lib/mongodb:/var/lib/mongodb
             - /var/log/containers/mongodb:/var/log/mongodb

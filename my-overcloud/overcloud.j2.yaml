@@ -55,6 +55,28 @@ parameters:
         Control the IP allocation for the ControlVirtualIP port. E.g.
         [{'ip_address':'1.2.3.4'}]
     type: json
+  ExtraConfig:
+    default: {}
+    description: |
+      Additional hiera configuration to inject into the cluster.
+    type: json
+{%- for role in roles %}
+  {{role.name}}ExtraConfig:
+    default: {}
+    description: |
+      Role specific additional hiera configuration to inject into the cluster.
+    type: json
+{%- endfor %}
+  controllerExtraConfig:
+    default: {}
+    description: |
+      DEPRECATED use ControllerExtraConfig instead
+    type: json
+  NovaComputeExtraConfig:
+    default: {}
+    description: |
+      DEPRECATED use ComputeExtraConfig instead
+    type: json
   InternalApiVirtualFixedIPs:
     default: []
     description: >
@@ -101,8 +123,8 @@ parameters:
     default: 'localdomain'
     type: string
     description: >
-      The DNS domain used for the hosts. This should match the dhcp_domain
-      configured in the Undercloud neutron. Defaults to localdomain.
+      The DNS domain used for the hosts. This must match the
+      overcloud_domain_name configured on the undercloud.
   ServerMetadata:
     default: {}
     description: >
@@ -154,7 +176,6 @@ parameters:
   {% else %}
     default: "%stackname%-{{role.name.lower()}}-%index%"
   {% endif %}
-
   {{role.name}}RemovalPolicies:
     default: []
     type: json
@@ -197,6 +218,19 @@ parameters:
     description: >
       Set to true to append per network Vips to /etc/hosts on each node.
 
+  DeploymentServerBlacklist:
+    default: []
+    type: comma_delimited_list
+    description: >
+      List of server hostnames to blacklist from any triggered deployments.
+
+parameter_groups:
+- label: deprecated
+  description: Do not use deprecated params, they will be removed.
+  parameters:
+  - controllerExtraConfig
+  - NovaComputeExtraConfig
+
 conditions:
   add_vips_to_etc_hosts: {equals : [{get_param: AddVipsToEtcHosts}, True]}
 
@@ -236,17 +270,31 @@ resources:
                 HOST: {get_param: CloudNameStorageManagement}
 
   HeatAuthEncryptionKey:
-    type: OS::Heat::RandomString
+    type: OS::TripleO::RandomString
 
   PcsdPassword:
-    type: OS::Heat::RandomString
+    type: OS::TripleO::RandomString
     properties:
       length: 16
 
   HorizonSecret:
-    type: OS::Heat::RandomString
+    type: OS::TripleO::RandomString
     properties:
       length: 10
+
+  NetCidrMapValue:
+    type: OS::Heat::Value
+    properties:
+      type: json
+      value:
+        map_replace:
+        - map_merge:
+          - {get_attr: [Networks, net_cidr_map]}
+          - ctlplane: {get_attr: [ControlVirtualIP, subnets, 0, cidr]}
+        - keys:
+            ctlplane: {get_param: NeutronControlPlaneID}
+          values:
+            disabled: {get_attr: [ControlVirtualIP, subnets, 0, cidr]}
 
   ServiceNetMap:
     type: OS::TripleO::ServiceNetMap
@@ -288,10 +336,70 @@ resources:
       Services:
         get_param: {{role.name}}Services
       ServiceNetMap: {get_attr: [ServiceNetMap, service_net_map]}
+      ServiceData:
+        net_cidr_map: {get_attr: [NetCidrMapValue, value]}
       EndpointMap: {get_attr: [EndpointMap, endpoint_map]}
       DefaultPasswords: {get_attr: [DefaultPasswords, passwords]}
       RoleName: {{role.name}}
       RoleParameters: {get_param: {{role.name}}Parameters}
+
+  # Lookup of role_data via heat outputs is slow, so workaround this by caching
+  # the value in an OS::Heat::Value resource
+  {{role.name}}ServiceChainRoleData:
+    type: OS::Heat::Value
+    properties:
+      type: json
+      value: {get_attr: [{{role.name}}ServiceChain, role_data]}
+
+  {{role.name}}ServiceConfigSettings:
+    type: OS::Heat::Value
+    properties:
+      type: json
+      value:
+        map_merge:
+          - get_attr: [{{role.name}}ServiceChainRoleData, value, config_settings]
+          {% for r in roles %}
+          - get_attr: [{{r.name}}ServiceChainRoleData, value, global_config_settings]
+          {% endfor %}
+          # This next step combines two yaql passes:
+          # - The inner one does a deep merge on the service_config_settings for all roles
+          # - The outer one filters the map based on the services enabled for the role
+          #   then merges the result into one map.
+          - yaql:
+              expression: let(root => $) -> $.data.map.items().where($[0] in coalesce($root.data.services, [])).select($[1]).reduce($1.mergeWith($2), {})
+              data:
+                map:
+                  yaql:
+                    expression: $.data.where($ != null).reduce($1.mergeWith($2), {})
+                    data:
+                    {% for r in roles %}
+                      - get_attr: [{{r.name}}ServiceChainRoleData, value, service_config_settings]
+                    {% endfor %}
+                services: {get_attr: [{{role.name}}ServiceNames, value]}
+
+  {{role.name}}MergedConfigSettings:
+    type: OS::Heat::Value
+    properties:
+      type: json
+      value:
+        config_settings: {}
+        global_config_settings: {}
+        service_config_settings: {}
+        merged_config_settings:
+          map_merge:
+          - get_attr: [{{role.name}}ServiceConfigSettings, value]
+          - get_param: ExtraConfig
+          {%- if role.name == 'Controller' %}
+          - map_merge:
+            - get_param: controllerExtraConfig
+            - get_param: {{role.name}}ExtraConfig
+          {%- elif role.name == 'Compute' %}
+          - map_merge:
+            - get_param: NovaComputeExtraConfig
+            - get_param: {{role.name}}ExtraConfig
+          {%- else %}
+          - get_param: {{role.name}}ExtraConfig
+          {%- endif %}
 
   # Filter any null/None service_names which may be present due to mapping
   # of services to OS::Heat::None
@@ -303,24 +411,24 @@ resources:
       value:
         yaql:
           expression: coalesce($.data, []).where($ != null)
-          data: {get_attr: [{{role.name}}ServiceChain, role_data, service_names]}
+          data: {get_attr: [{{role.name}}ServiceChainRoleData, value, service_names]}
 
   {{role.name}}HostsDeployment:
     type: OS::Heat::StructuredDeployments
     properties:
       name: {{role.name}}HostsDeployment
       config: {get_attr: [hostsConfig, config_id]}
-      servers: {get_attr: [{{role.name}}, attributes, nova_server_resource]}
+      servers: {get_attr: [{{role.name}}Servers, value]}
 
   {{role.name}}SshKnownHostsDeployment:
     type: OS::Heat::StructuredDeployments
     properties:
       name: {{role.name}}SshKnownHostsDeployment
       config: {get_resource: SshKnownHostsConfig}
-      servers: {get_attr: [{{role.name}}, attributes, nova_server_resource]}
+      servers: {get_attr: [{{role.name}}Servers, value]}
 
   {{role.name}}AllNodesDeployment:
-    type: OS::Heat::StructuredDeployments
+    type: OS::TripleO::AllNodesDeployment
     depends_on:
 {% for role_inner in roles %}
       - {{role_inner.name}}HostsDeployment
@@ -328,7 +436,7 @@ resources:
     properties:
       name: {{role.name}}AllNodesDeployment
       config: {get_attr: [allNodesConfig, config_id]}
-      servers: {get_attr: [{{role.name}}, attributes, nova_server_resource]}
+      servers: {get_attr: [{{role.name}}Servers, value]}
       input_values:
         # Note we have to use yaql to look up the first hostname/ip in the
         # list because heat path based attributes operate on the attribute
@@ -350,7 +458,7 @@ resources:
     properties:
       name: {{role.name}}AllNodesValidationDeployment
       config: {get_resource: AllNodesValidationConfig}
-      servers: {get_attr: [{{role.name}}, attributes, nova_server_resource]}
+      servers: {get_attr: [{{role.name}}Servers, value]}
 
   {{role.name}}IpListMap:
     type: OS::TripleO::Network::Ports::NetIpListMap
@@ -365,7 +473,13 @@ resources:
       EnabledServices: {get_attr: [{{role.name}}ServiceNames, value]}
       ServiceNetMap: {get_attr: [ServiceNetMap, service_net_map_lower]}
       ServiceHostnameList: {get_attr: [{{role.name}}, hostname]}
-      NetworkHostnameMap:
+      NetworkHostnameMap: {get_attr: [{{role.name}}NetworkHostnameMap, value]}
+
+  {{role.name}}NetworkHostnameMap:
+    type: OS::Heat::Value
+    properties:
+      type: json
+      value:
         # Note (shardy) this somewhat complex yaql may be replaced
         # with a map_deep_merge function in ocata.  It merges the
         # list of maps, but appends to colliding lists so we can
@@ -401,31 +515,58 @@ resources:
   {% else %}
           NovaComputeSchedulerHints: {get_param: NovaComputeSchedulerHints}
   {% endif %}
-          ServiceConfigSettings:
-            map_merge:
-              -  get_attr: [{{role.name}}ServiceChain, role_data, config_settings]
-          {% for r in roles %}
-              - get_attr: [{{r.name}}ServiceChain, role_data, global_config_settings]
-          {% endfor %}
-              # This next step combines two yaql passes:
-              # - The inner one does a deep merge on the service_config_settings for all roles
-              # - The outer one filters the map based on the services enabled for the role
-              #   then merges the result into one map.
-              - yaql:
-                  expression: let(root => $) -> $.data.map.items().where($[0] in coalesce($root.data.services, [])).select($[1]).reduce($1.mergeWith($2), {})
-                  data:
-                    map:
-                      yaql:
-                        expression: $.data.where($ != null).reduce($1.mergeWith($2), {})
-                        data:
-                        {% for r in roles %}
-                          - get_attr: [{{r.name}}ServiceChain, role_data, service_config_settings]
-                        {% endfor %}
-                    services: {get_attr: [{{role.name}}ServiceNames, value]}
+          ServiceConfigSettings: {get_attr: [{{role.name}}ServiceConfigSettings, value]}
           ServiceNames: {get_attr: [{{role.name}}ServiceNames, value]}
-          MonitoringSubscriptions: {get_attr: [{{role.name}}ServiceChain, role_data, monitoring_subscriptions]}
-          ServiceMetadataSettings: {get_attr: [{{role.name}}ServiceChain, role_data, service_metadata_settings]}
+          MonitoringSubscriptions: {get_attr: [{{role.name}}ServiceChainRoleData, value, monitoring_subscriptions]}
+          ServiceMetadataSettings: {get_attr: [{{role.name}}ServiceChainRoleData, value, service_metadata_settings]}
+          DeploymentServerBlacklistDict: {get_attr: [DeploymentServerBlacklistDict, value]}
+          RoleParameters: {get_param: {{role.name}}Parameters}
 {% endfor %}
+
+{% for role in roles %}
+  {{role.name}}Servers:
+    type: OS::Heat::Value
+    depends_on: {{role.name}}
+    properties:
+      type: json
+      value:
+        yaql:
+          expression: let(servers=>switch(isDict($.data.servers) => $.data.servers, true => {})) -> $servers.deleteAll($servers.keys().where($servers[$] = null))
+          data:
+            servers: {get_attr: [{{role.name}}, attributes, nova_server_resource]}
+{% endfor %}
+
+  # This is a different format to *Servers, as it creates a map of lists
+  # whereas *Servers creates a map of maps with keys of the nested resource names
+  ServerIdMap:
+    type: OS::Heat::Value
+    properties:
+      value:
+        server_ids:
+{% for role in roles %}
+          {{role.name}}: {get_attr: [{{role.name}}, nova_server_resource]}
+{% endfor %}
+        bootstrap_server_id:
+          yaql:
+            expression: coalesce($.data, []).first(null)
+            data: {get_attr: [{{primary_role_name}}, nova_server_resource]}
+
+  # This resource just creates a dict out of the DeploymentServerBlacklist,
+  # which is a list. The dict is used in the role templates to set a condition
+  # on whether to create the deployment resources. We can't use the list
+  # directly because there is no way to ask Heat if a list contains a specific
+  # value.
+  DeploymentServerBlacklistDict:
+    type: OS::Heat::Value
+    properties:
+      type: json
+      value:
+        map_merge:
+          repeat:
+            template:
+              hostname: 1
+            for_each:
+              hostname: {get_param: DeploymentServerBlacklist}
 
   hostsConfig:
     type: OS::TripleO::Hosts::SoftwareConfig
@@ -465,7 +606,7 @@ resources:
           data:
             groups:
 {% for role in roles %}
-              - {get_attr: [{{role.name}}ServiceChain, role_data, logging_groups]}
+              - {get_attr: [{{role.name}}ServiceChainRoleData, value, logging_groups]}
 {% endfor %}
       logging_sources:
         yaql:
@@ -474,7 +615,7 @@ resources:
           data:
             sources:
 {% for role in roles %}
-              - {get_attr: [{{role.name}}ServiceChain, role_data, logging_sources]}
+              - {get_attr: [{{role.name}}ServiceChainRoleData, value, logging_sources]}
 {% endfor %}
       controller_ips: {get_attr: [{{primary_role_name}}, ip_address]}
       controller_names: {get_attr: [{{primary_role_name}}, hostname]}
@@ -514,8 +655,6 @@ resources:
 {% for role in roles %}
               - {get_attr: [{{role.name}}IpListMap, short_service_bootstrap_hostnames]}
 {% endfor %}
-      # FIXME(shardy): These require further work to move into service_ips
-      memcache_node_ips: {get_attr: [{{primary_role_name}}IpListMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, MemcachedNetwork]}]}
       NetVipMap: {get_attr: [VipMap, net_ip_map]}
       RedisVirtualIP: {get_attr: [RedisVirtualIP, ip_address]}
       ServiceNetMap: {get_attr: [ServiceNetMap, service_net_map_lower]}
@@ -523,12 +662,12 @@ resources:
       UpdateIdentifier: {get_param: UpdateIdentifier}
 
   MysqlRootPassword:
-    type: OS::Heat::RandomString
+    type: OS::TripleO::RandomString
     properties:
       length: 10
 
   RabbitCookie:
-    type: OS::Heat::RandomString
+    type: OS::TripleO::RandomString
     properties:
       length: 20
       salt: {get_param: RabbitCookieSalt}
@@ -613,6 +752,10 @@ resources:
       StorageMgmtIp: {get_attr: [StorageMgmtVirtualIP, ip_address]}
       StorageMgmtIpUri: {get_attr: [StorageMgmtVirtualIP, ip_address_uri]}
       # No tenant or management VIP required
+    # Because of nested get_attr functions in the KeystoneAdminVip output, we
+    # can't determine which attributes of VipMap are used until after
+    # ServiceNetMap's attribute values are available.
+    depends_on: ServiceNetMap
 
   # All Nodes Validations
   AllNodesValidationConfig:
@@ -649,7 +792,7 @@ resources:
     properties:
       servers:
 {% for role in roles %}
-        {{role.name}}: {get_attr: [{{role.name}}, attributes, nova_server_resource]}
+        {{role.name}}: {get_attr: [{{role.name}}Servers, value]}
 {% endfor %}
       input_values:
         deploy_identifier: {get_param: DeployIdentifier}
@@ -667,7 +810,7 @@ resources:
     properties:
       servers:
 {% for role in roles %}
-        {{role.name}}: {get_attr: [{{role.name}}, attributes, nova_server_resource]}
+        {{role.name}}: {get_attr: [{{role.name}}Servers, value]}
 {% endfor %}
 
   # Post deployment steps for all roles
@@ -681,13 +824,70 @@ resources:
     properties:
       servers:
 {% for role in roles %}
-        {{role.name}}: {get_attr: [{{role.name}}, attributes, nova_server_resource]}
+        {{role.name}}: {get_attr: [{{role.name}}Servers, value]}
 {% endfor %}
+      stack_name: {get_param: 'OS::stack_name'}
       EndpointMap: {get_attr: [EndpointMap, endpoint_map]}
+      ctlplane_service_ips:
+        # Note (shardy) this somewhat complex yaql may be replaced
+        # with a map_deep_merge function in ocata.  It merges the
+        # list of maps, but appends to colliding lists when a service
+        # is deployed on more than one role
+        yaql:
+          expression: dict($.data.l.where($ != null).selectMany($.items()).groupBy($[0], $[1], [$[0], $[1].flatten()]))
+          data:
+            l:
+{% for role in roles %}
+              - {get_attr: [{{role.name}}IpListMap, ctlplane_service_ips]}
+{% endfor %}
       role_data:
 {% for role in roles %}
-        {{role.name}}: {get_attr: [{{role.name}}ServiceChain, role_data]}
+        {{role.name}}:
+          map_merge:
+          - {get_attr: [{{role.name}}ServiceChainRoleData, value]}
+          - {get_attr: [{{role.name}}MergedConfigSettings, value]}
 {% endfor %}
+
+  ServerOsCollectConfigData:
+    type: OS::Heat::Value
+    properties:
+      type: json
+      value:
+{% for role in roles %}
+        {{role.name}}: {get_attr: [{{role.name}}, attributes, os_collect_config]}
+{% endfor %}
+
+  DeployedServerEnvironment:
+    type: OS::TripleO::DeployedServerEnvironment
+    properties:
+      RoleCounts:
+{% for role in roles %}
+        {{role.name}}DeployedServerCount: {get_param: {{role.name}}Count}
+{% endfor %}
+      VipMap:
+        map_merge:
+          - {get_attr: [VipMap, net_ip_map]}
+          - redis: {get_attr: [RedisVirtualIP, ip_address]}
+      DeployedServerPortMap:
+        map_merge:
+          list_concat:
+{% for role in roles %}
+              - {get_attr: [{{role.name}}, deployed_server_port_map]}
+{% endfor %}
+      DeployedServerDeploymentSwiftDataMap:
+        map_merge:
+          list_concat:
+{% for role in roles %}
+              - {get_attr: [{{role.name}}, deployed_server_deployment_swift_data_map]}
+{% endfor %}
+      DefaultRouteIp:
+        str_split:
+          - ':'
+          - str_split:
+            - '/'
+            - {get_attr: [ServerOsCollectConfigData, value, {{primary_role_name}}, '0', request, metadata_url]}
+            - 2
+          - 0
 
 outputs:
   ManagedEndpoints:
@@ -698,6 +898,11 @@ outputs:
     value: {get_attr: [EndpointMapData, value, KeystonePublic, uri]}
   KeystoneAdminVip:
     description: Keystone Admin VIP endpoint
+    # Note that these nested get_attr functions require a dependency
+    # relationship between VipMap and ServiceNetMap, since we can't determine
+    # which attributes of VipMap are used until after ServiceNetMap's attribute
+    # values are available. If this is ever reworked to not use nested
+    # get_attr, that dependency can be removed.
     value: {get_attr: [VipMap, net_ip_map, {get_attr: [ServiceNetMap, service_net_map, KeystoneAdminApiNetwork]}]}
   EndpointMap:
     description: |
@@ -725,7 +930,10 @@ outputs:
     description: The configuration data associated with each role
     value:
 {% for role in roles %}
-      {{role.name}}: {get_attr: [{{role.name}}ServiceChain, role_data]}
+      {{role.name}}:
+        map_merge:
+        - {get_attr: [{{role.name}}ServiceChainRoleData, value]}
+        - {get_attr: [{{role.name}}MergedConfigSettings, value]}
 {% endfor %}
   RoleNetIpMap:
     description: Mapping of each network to a list of IPs for each role
@@ -733,3 +941,26 @@ outputs:
 {% for role in roles %}
       {{role.name}}: {get_attr: [{{role.name}}IpListMap, net_ip_map]}
 {% endfor %}
+  RoleNetHostnameMap:
+    description: Mapping of each network to a list of hostnames for each role
+    value:
+{% for role in roles %}
+      {{role.name}}: {get_attr: [{{role.name}}NetworkHostnameMap, value]}
+{% endfor %}
+  ServerOsCollectConfigData:
+    description: The os-collect-config configuration associated with each server resource
+    value: {get_attr: [ServerOsCollectConfigData, value]}
+  VipMap:
+    description: Mapping of each network to VIP addresses. Also includes the Redis VIP.
+    value:
+      map_merge:
+        - {get_attr: [VipMap, net_ip_map]}
+        - redis: {get_attr: [RedisVirtualIP, ip_address]}
+  ServerIdData:
+    description: Mapping of each role to a list of nova server IDs and the bootstrap ID
+    value: {get_attr: [ServerIdMap, value]}
+  DeployedServerEnvironment:
+    description:
+      Environment data that can be used as input into the services stack when
+      using split-stack.
+    value: {get_attr: [DeployedServerEnvironment, deployed_server_environment]}

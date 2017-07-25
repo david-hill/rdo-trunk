@@ -4,6 +4,10 @@ description: >
   OpenStack Glance API service configured with Puppet
 
 parameters:
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
+    type: json
   ServiceNetMap:
     default: {}
     description: Mapping of service_name -> network name. Typically set
@@ -29,6 +33,10 @@ parameters:
   Debug:
     default: ''
     description: Set to True to enable debugging on all services.
+    type: string
+  GlanceDebug:
+    default: ''
+    description: Set to True to enable debugging Glance service.
     type: string
   GlancePassword:
     description: The password for the glance service and db account, used by the glance services.
@@ -58,10 +66,6 @@ parameters:
     default: false
   CephClientUserName:
     default: openstack
-    type: string
-  Debug:
-    default: ''
-    description: Set to True to enable debugging on all services.
     type: string
   GlanceNotifierStrategy:
     description: Strategy to use for Glance notification queue
@@ -96,6 +100,10 @@ parameters:
   GlanceRbdPoolName:
     default: images
     type: string
+  NovaEnableRbdBackend:
+    default: false
+    description: Whether to enable or not the Rbd backend for Nova
+    type: boolean
   RabbitPassword:
     description: The password for RabbitMQ
     type: string
@@ -124,16 +132,32 @@ parameters:
       e.g. { glance-context_is_admin: { key: context_is_admin, value: 'role:admin' } }
     default: {}
     type: json
+  NotificationDriver:
+    type: string
+    default: 'messagingv2'
+    description: Driver or drivers to handle sending notifications.
+    constraints:
+      - allowed_values: [ 'messagingv2', 'noop' ]
 
 conditions:
   use_tls_proxy: {equals : [{get_param: EnableInternalTLS}, true]}
   glance_workers_unset: {equals : [{get_param: GlanceWorkers}, '']}
+  service_debug_unset: {equals : [{get_param: GlanceDebug}, '']}
+  glance_multiple_locations:
+    and:
+    - equals:
+      - get_param: GlanceBackend
+      - rbd
+    - equals:
+      - get_param: NovaEnableRbdBackend
+      - true
 
 resources:
 
   TLSProxyBase:
     type: OS::TripleO::Services::TLSProxyBase
     properties:
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
@@ -170,7 +194,11 @@ outputs:
             glance::api::enable_v2_api: true
             glance::api::authtoken::password: {get_param: GlancePassword}
             glance::api::enable_proxy_headers_parsing: true
-            glance::api::debug: {get_param: Debug}
+            glance::api::debug:
+              if:
+              - service_debug_unset
+              - {get_param: Debug }
+              - {get_param: GlanceDebug }
             glance::policy::policies: {get_param: GlanceApiPolicies}
             tripleo.glance_api.firewall_rules:
               '112 glance_api':
@@ -182,6 +210,8 @@ outputs:
             glance::keystone::authtoken::project_domain_name: 'Default'
             glance::api::pipeline: 'keystone'
             glance::api::show_image_direct_url: true
+            glance::api::show_multiple_locations: {if: [glance_multiple_locations, true, false]}
+            glance::api::os_region_name: {get_param: KeystoneRegion}
             # NOTE: bind IP is found in Heat replacing the network name with the
             # local node IP for the given network; replacement examples
             # (eg. for internal_api):
@@ -219,7 +249,7 @@ outputs:
             glance::notify::rabbitmq::rabbit_port: {get_param: RabbitClientPort}
             glance::notify::rabbitmq::rabbit_password: {get_param: RabbitPassword}
             glance::notify::rabbitmq::rabbit_use_ssl: {get_param: RabbitClientUseSSL}
-            glance::notify::rabbitmq::notification_driver: messagingv2
+            glance::notify::rabbitmq::notification_driver: {get_param: NotificationDriver}
             tripleo::profile::base::glance::api::glance_nfs_enabled: {get_param: GlanceNfsEnabled}
             tripleo::glance::nfs_mount::share: {get_param: GlanceNfsShare}
             tripleo::glance::nfs_mount::options: {get_param: GlanceNfsOptions}

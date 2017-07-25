@@ -37,7 +37,7 @@ parameters:
     type: string
   NeutronPublicInterface:
     default: nic1
-    description: A port to add to the NeutronPhysicalBridge.
+    description: Which interface to add to the NeutronPhysicalBridge.
     type: string
   NodeIndex:
     type: number
@@ -90,8 +90,8 @@ parameters:
     default: 'localdomain'
     type: string
     description: >
-      The DNS domain used for the hosts. This should match the dhcp_domain
-      configured in the Undercloud neutron. Defaults to localdomain.
+      The DNS domain used for the hosts. This must match the
+      overcloud_domain_name configured on the undercloud.
   NovaComputeServerMetadata:
     default: {}
     description: >
@@ -150,6 +150,49 @@ parameters:
       major-upgrade-composable-steps.yaml and major-upgrade-converge.yaml
       environment files.
     default: ''
+  DeploymentServerBlacklistDict:
+    default: {}
+    type: json
+    description: >
+      Map of server hostnames to blacklist from any triggered
+      deployments. If the value is 1, the server will be blacklisted. This
+      parameter is generated from the parent template.
+  RoleParameters:
+    type: json
+    description: Role Specific Parameters
+    default: {}
+  DeploymentSwiftDataMap:
+    type: json
+    description: |
+      Map of servers to Swift container and object for storing deployment data.
+      The keys are the Heat assigned hostnames, and the value is a map of the
+      container/object name in Swift. Example value:
+        overcloud-controller-0:
+          container: overcloud-controller
+          object: 0
+        overcloud-controller-1:
+          container: overcloud-controller
+          object: 1
+        overcloud-controller-2:
+          container: overcloud-controller
+          object: 2
+        overcloud-novacompute-0:
+          container: overcloud-compute
+          object: 0
+    default: {}
+
+conditions:
+  deployment_swift_data_map_unset:
+    equals:
+      - get_param:
+          - DeploymentSwiftDataMap
+          - {get_param: Hostname}
+      - ""
+  server_not_blacklisted:
+    not:
+      equals:
+        - {get_param: [DeploymentServerBlacklistDict, {get_param: Hostname}]}
+        - 1
 
 resources:
 
@@ -180,6 +223,12 @@ resources:
           - {get_param: NovaComputeServerMetadata}
           - {get_param: ServiceMetadataSettings}
       scheduler_hints: {get_param: NovaComputeSchedulerHints}
+      deployment_swift_data:
+        if:
+          - deployment_swift_data_map_unset
+          - {}
+          - {get_param: [DeploymentSwiftDataMap,
+                         {get_param: Hostname}]}
 
   # Combine the NodeAdminUserData and NodeUserData mime archives
   UserData:
@@ -367,6 +416,9 @@ resources:
     type: OS::TripleO::Compute::PreNetworkConfig
     properties:
       server: {get_resource: NovaCompute}
+      RoleParameters: {get_param: RoleParameters}
+      ServiceNames: {get_param: ServiceNames}
+      deployment_actions: {get_attr: [DeploymentActions, value]}
 
   NetworkConfig:
     type: OS::TripleO::Compute::Net::SoftwareConfig
@@ -384,9 +436,13 @@ resources:
     depends_on: PreNetworkConfig
     properties:
       name: NetworkDeployment
+      actions:
+        if:
+          - server_not_blacklisted
+          - {get_param: NetworkDeploymentActions}
+          - []
       config: {get_resource: NetworkConfig}
       server: {get_resource: NovaCompute}
-      actions: {get_param: NetworkDeploymentActions}
       input_values:
         bridge_name: {get_param: NeutronPhysicalBridge}
         interface_name: {get_param: NeutronPublicInterface}
@@ -410,6 +466,11 @@ resources:
     depends_on: NetworkDeployment
     properties:
       name: NovaComputeUpgradeInitDeployment
+      actions:
+        if:
+          - server_not_blacklisted
+          - ['CREATE', 'UPDATE']
+          - []
       server: {get_resource: NovaCompute}
       config: {get_resource: NovaComputeUpgradeInitConfig}
 
@@ -421,6 +482,7 @@ resources:
         hierarchy:
           - '"%{::uuid}"'
           - heat_config_%{::deploy_config_name}
+          - config_step
           - compute_extraconfig
           - extraconfig
           - service_names
@@ -455,12 +517,18 @@ resources:
             fqdn_tenant: {get_attr: [NetHostMap, value, tenant, fqdn]}
             fqdn_management: {get_attr: [NetHostMap, value, management, fqdn]}
             fqdn_ctlplane: {get_attr: [NetHostMap, value, ctlplane, fqdn]}
+            fqdn_external: {get_attr: [NetHostMap, value, external, fqdn]}
 
   NovaComputeDeployment:
     type: OS::TripleO::SoftwareDeployment
     depends_on: NovaComputeUpgradeInitDeployment
     properties:
       name: NovaComputeDeployment
+      actions:
+        if:
+          - server_not_blacklisted
+          - ['CREATE', 'UPDATE']
+          - []
       config: {get_resource: NovaComputeConfig}
       server: {get_resource: NovaCompute}
       input_values:
@@ -477,6 +545,9 @@ resources:
   ComputeExtraConfigPre:
     depends_on: NovaComputeDeployment
     type: OS::TripleO::ComputeExtraConfigPre
+    # We have to use conditions here so that we don't break backwards
+    # compatibility with templates everywhere
+    condition: server_not_blacklisted
     properties:
         server: {get_resource: NovaCompute}
 
@@ -485,6 +556,9 @@ resources:
   NodeExtraConfig:
     depends_on: [ComputeExtraConfigPre, NodeTLSCAData]
     type: OS::TripleO::NodeExtraConfig
+    # We have to use conditions here so that we don't break backwards
+    # compatibility with templates everywhere
+    condition: server_not_blacklisted
     properties:
         server: {get_resource: NovaCompute}
 
@@ -496,17 +570,32 @@ resources:
     depends_on: NetworkDeployment
     properties:
       name: UpdateDeployment
+      actions:
+        if:
+          - server_not_blacklisted
+          - ['CREATE', 'UPDATE']
+          - []
       config: {get_resource: UpdateConfig}
       server: {get_resource: NovaCompute}
       input_values:
         update_identifier:
           get_param: UpdateIdentifier
 
+  DeploymentActions:
+    type: OS::Heat::Value
+    properties:
+      value:
+        if:
+          - server_not_blacklisted
+          - ['CREATE', 'UPDATE']
+          - []
+
   SshHostPubKey:
     type: OS::TripleO::Ssh::HostPubKey
     depends_on: NovaComputeDeployment
     properties:
         server: {get_resource: NovaCompute}
+        deployment_actions: {get_attr: [DeploymentActions, value]}
 
 outputs:
   ip_address:
@@ -530,6 +619,45 @@ outputs:
   management_ip_address:
     description: IP address of the server in the management network
     value: {get_attr: [ManagementPort, ip_address]}
+  deployed_server_port_map:
+    description: |
+      Map of Heat created hostname of the server to ip address. This is the
+      hostname before it has been mapped with the HostnameMap parameter, and
+      the IP address from the ctlplane network. This map can be used to construct
+      the DeployedServerPortMap parameter when using split-stack.
+    value:
+      map_replace:
+        - hostname:
+            fixed_ips:
+              - ip_address: {get_attr: [NovaCompute, networks, ctlplane, 0]}
+        - keys:
+            hostname:
+              list_join:
+                - '-'
+                - - {get_param: Hostname}
+                  - ctlplane
+  deployed_server_deployment_swift_data_map:
+    description:
+      Map of Heat created hostname of the server to the Swift container and object
+      used to created the temporary url for metadata polling with
+      os-collect-config.
+    value:
+      map_replace:
+        - hostname:
+            container:
+              str_split:
+                - '/'
+                - {get_attr: [NovaCompute, os_collect_config, request, metadata_url]}
+                - 5
+            object:
+              str_split:
+                - '?'
+                - str_split:
+                    - '/'
+                    - {get_attr: [NovaCompute, os_collect_config, request, metadata_url]}
+                    - 6
+                - 0
+        - keys: {hostname: {get_param: Hostname}}
   hostname:
     description: Hostname of the server
     value: {get_attr: [NovaCompute, name]}
@@ -610,3 +738,7 @@ CTLPLANEIP,CTLPLANEHOST.DOMAIN,CTLPLANEHOST HOSTSSHPUBKEY"
     description: Heat resource handle for the Nova compute server
     value:
       {get_resource: NovaCompute}
+    condition: server_not_blacklisted
+  os_collect_config:
+    description: The os-collect-config configuration associated with this server resource
+    value: {get_attr: [NovaCompute, os_collect_config]}

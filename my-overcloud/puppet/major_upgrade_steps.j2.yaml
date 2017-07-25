@@ -8,11 +8,14 @@ description: 'Upgrade steps for all roles'
 parameters:
   servers:
     type: json
-
+  stack_name:
+    type: string
+    description: Name of the topmost stack
   role_data:
     type: json
     description: Mapping of Role name e.g Controller to the per-role data
-
+  ctlplane_service_ips:
+    type: json
   UpdateIdentifier:
     type: string
     description: >
@@ -44,24 +47,6 @@ resources:
         - ''
         - - "#!/bin/bash\n\n"
           - "set -eu\n\n"
-          - "if hiera -c /etc/puppet/hiera.yaml service_names | grep nova_compute ; then\n\n"
-          - "  crudini --set /etc/nova/nova.conf placement auth_type password\n\n"
-          - "  crudini --set /etc/nova/nova.conf placement username placement\n\n"
-          - "  crudini --set /etc/nova/nova.conf placement project_domain_name Default\n\n"
-          - "  crudini --set /etc/nova/nova.conf placement user_domain_name Default\n\n"
-          - "  crudini --set /etc/nova/nova.conf placement project_name service\n\n"
-          - "  crudini --set /etc/nova/nova.conf placement os_interface internal\n\n"
-          - str_replace:
-              template: |
-                crudini --set /etc/nova/nova.conf placement password 'SERVICE_PASSWORD'
-                crudini --set /etc/nova/nova.conf placement os_region_name 'REGION_NAME'
-                crudini --set /etc/nova/nova.conf placement auth_url 'AUTH_URL'
-              params:
-                SERVICE_PASSWORD: { get_param: NovaPassword }
-                REGION_NAME: { get_param: KeystoneRegion }
-                AUTH_URL: { get_param: [EndpointMap, KeystoneAdmin, uri_no_suffix]}
-          - "  systemctl restart openstack-nova-compute\n\n"
-          - "fi\n\n"
           - str_replace:
               template: |
                 ROLE='ROLE_NAME'
@@ -224,7 +209,9 @@ resources:
 {%- endfor %}
     properties:
       servers: {get_param: servers}
+      stack_name: {get_param: stack_name}
       role_data: {get_param: role_data}
+      ctlplane_service_ips: {get_param: ctlplane_service_ips}
 
 outputs:
   # Output the config for each role, just use Step1 as the config should be

@@ -4,18 +4,20 @@ description: >
   OpenStack containerized Ceilometer Agent Compute service
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerCeilometerComputeImage:
     description: image
-    default: 'centos-binary-ceilometer-compute:latest'
+    type: string
+  DockerCeilometerConfigImage:
+    description: The container image to use for the ceilometer config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -44,6 +46,7 @@ resources:
     type: ../../puppet/services/ceilometer-agent-compute.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -63,17 +66,19 @@ outputs:
         config_volume: ceilometer
         puppet_tags: ceilometer_config
         step_config: *step_config
-        config_image: &ceilometer_agent_compute_image
-          list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerCeilometerComputeImage} ]
+        config_image: {get_param: DockerCeilometerConfigImage}
       kolla_config:
-        /var/lib/kolla/config_files/ceilometer-agent-compute.json:
+        /var/lib/kolla/config_files/ceilometer_agent_compute.json:
           command: /usr/bin/ceilometer-polling --polling-namespaces compute
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
       docker_config:
         step_4:
-          ceilometer_agent-compute:
-            image: *ceilometer_agent_compute_image
+          ceilometer_agent_compute:
+            image: {get_param: DockerCeilometerComputeImage}
             net: host
             privileged: false
             restart: always
@@ -81,11 +86,12 @@ outputs:
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
-                  - /var/lib/kolla/config_files/ceilometer-agent-compute.json:/var/lib/kolla/config_files/config.json:ro
-                  - /var/lib/config-data/ceilometer/etc/ceilometer/:/etc/ceilometer/:ro
+                  - /var/lib/kolla/config_files/ceilometer_agent_compute.json:/var/lib/kolla/config_files/config.json:ro
+                  - /var/lib/config-data/puppet-generated/ceilometer/:/var/lib/kolla/config_files/src:ro
+                  - /var/run/libvirt:/var/run/libvirt:ro
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
       upgrade_tasks:
         - name: Stop and disable ceilometer-agent-compute service
           tags: step2
-          service: name=openstack-ceilometer-agent-compute state=stopped enabled=no
+          service: name=openstack-ceilometer-compute state=stopped enabled=no

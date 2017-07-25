@@ -4,18 +4,20 @@ description: >
   OpenStack containerized Redis services
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerRedisImage:
     description: image
-    default: 'centos-binary-redis:latest'
+    type: string
+  DockerRedisConfigImage:
+    description: The container image to use for the redis config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -41,6 +43,7 @@ resources:
     type: ../../../puppet/services/database/redis.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
 
@@ -64,20 +67,32 @@ outputs:
         # https://github.com/arioch/puppet-redis/commit/1c004143223e660cbd433422ff8194508aab9763
         puppet_tags: 'exec'
         step_config: *step_config
-        config_image: &redis_image
-          list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerRedisImage} ]
+        config_image: {get_param: DockerRedisConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/redis.json:
           command: /usr/bin/redis-server /etc/redis.conf
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
           permissions:
             - path: /var/run/redis
               owner: redis:redis
               recurse: true
       docker_config:
         step_1:
+          redis_init_logs:
+            start_order: 0
+            detach: false
+            image: &redis_image {get_param: DockerRedisImage}
+            privileged: false
+            user: root
+            volumes:
+              - /var/log/containers/redis:/var/log/redis
+            command: ['/bin/bash', '-c', 'chown -R redis:redis /var/log/redis']
           redis:
+            start_order: 1
             image: *redis_image
             net: host
             privileged: false
@@ -85,16 +100,19 @@ outputs:
             volumes:
               - /run:/run
               - /var/lib/kolla/config_files/redis.json:/var/lib/kolla/config_files/config.json:ro
-              - /var/lib/config-data/redis/etc/:/etc/:ro
+              - /var/lib/config-data/puppet-generated/redis/:/var/lib/kolla/config_files/src:ro
               - /etc/localtime:/etc/localtime:ro
-              - logs:/var/log/kolla
+              - /var/log/containers/redis:/var/log/redis
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
       host_prep_tasks:
-        - name: create /var/run/redis
+        - name: create persistent directories
           file:
-            path: /var/run/redis
+            path: "{{ item }}"
             state: directory
+          with_items:
+            - /var/log/containers/redis
+            - /var/run/redis
       upgrade_tasks:
         - name: Stop and disable redis service
           tags: step2

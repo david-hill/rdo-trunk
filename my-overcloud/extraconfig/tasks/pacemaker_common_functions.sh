@@ -11,7 +11,7 @@ function log_debug {
 }
 
 function is_bootstrap_node {
-  if [ "$(hiera -c /etc/puppet/hiera.yaml bootstrap_nodeid)" = "$(facter hostname)" ]; then
+  if [ "$(hiera -c /etc/puppet/hiera.yaml bootstrap_nodeid | tr '[:upper:]' '[:lower:]')" = "$(facter hostname | tr '[:upper:]' '[:lower:]')" ]; then
     log_debug "Node is bootstrap"
     echo "true"
   fi
@@ -370,4 +370,16 @@ function fixup_wrong_ipv6_vip {
             done
         fi
     )
+}
+
+# https://bugs.launchpad.net/tripleo/+bug/1704131 guard against yum update
+# waiting for an existing process until the heat stack time out
+function check_for_yum_lock {
+    if [[ -f /var/run/yum.pid ]] ; then
+        ERR="ERROR existing yum.pid detected - can't continue! Please ensure
+there is no other package update process for the duration of the minor update
+worfklow. Exiting."
+        echo $ERR
+        exit 1
+   fi
 }

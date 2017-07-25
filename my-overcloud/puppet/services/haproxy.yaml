@@ -4,6 +4,10 @@ description: >
   HAproxy service configured with Puppet
 
 parameters:
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
+    type: json
   ServiceNetMap:
     default: {}
     description: Mapping of service_name -> network name. Typically set
@@ -26,6 +30,10 @@ parameters:
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
     type: json
+  EnableLoadBalancer:
+    default: true
+    description: Whether to deploy a LoadBalancer, set to false when an external load balancer is used.
+    type: boolean
   HAProxyStatsPassword:
     description: Password for HAProxy stats endpoint
     hidden: true
@@ -38,6 +46,10 @@ parameters:
     default: /dev/log
     description: Syslog address where HAproxy will send its log
     type: string
+  HAProxyStatsEnabled:
+    default: true
+    description: Whether or not to enable the HAProxy stats interface.
+    type: boolean
   RedisPassword:
     description: The password for Redis
     type: string
@@ -50,12 +62,18 @@ parameters:
     type: string
     description: Specifies the default CA cert to use if TLS is used for
                  services in the internal network.
+  InternalTLSCRLPEMFile:
+    default: '/etc/pki/CA/crl/overcloud-crl.pem'
+    type: string
+    description: Specifies the default CRL PEM file to use for revocation if
+                 TLS is used for services in the internal network.
 
 resources:
 
   HAProxyPublicTLS:
     type: OS::TripleO::Services::HAProxyPublicTLS
     properties:
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
@@ -65,6 +83,7 @@ resources:
   HAProxyInternalTLS:
     type: OS::TripleO::Services::HAProxyInternalTLS
     properties:
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       EndpointMap: {get_param: EndpointMap}
@@ -89,6 +108,9 @@ outputs:
             tripleo::haproxy::haproxy_stats_password: {get_param: HAProxyStatsPassword}
             tripleo::haproxy::redis_password: {get_param: RedisPassword}
             tripleo::haproxy::ca_bundle: {get_param: InternalTLSCAFile}
+            tripleo::haproxy::crl_file: {get_param: InternalTLSCRLPEMFile}
+            tripleo::haproxy::haproxy_stats: {get_param: HAProxyStatsEnabled}
+            enable_load_balancer: {get_param: EnableLoadBalancer}
             tripleo::profile::base::haproxy::certificates_specs:
               map_merge:
                 - get_attr: [HAProxyPublicTLS, role_data, certificates_specs]

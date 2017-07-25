@@ -15,7 +15,7 @@ parameters:
     type: json
   TenantNetAdminStateUp:
     default: false
-    description: This admin state of the network.
+    description: The admin state of the network.
     type: boolean
   TenantNetEnableDHCP:
     default: false
@@ -61,3 +61,5 @@ outputs:
   OS::stack_id:
     description: Neutron tenant network
     value: {get_resource: TenantNetwork}
+  subnet_cidr:
+    value: {get_attr: TenantSubnet, cidr}

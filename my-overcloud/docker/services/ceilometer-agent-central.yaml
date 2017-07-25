@@ -4,18 +4,20 @@ description: >
   OpenStack containerized Ceilometer Agent Central service
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerCeilometerCentralImage:
     description: image
-    default: 'centos-binary-ceilometer-central:latest'
+    type: string
+  DockerCeilometerConfigImage:
+    description: The container image to use for the ceilometer config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -44,6 +46,7 @@ resources:
     type: ../../puppet/services/ceilometer-agent-central.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -63,18 +66,20 @@ outputs:
         config_volume: ceilometer
         puppet_tags: ceilometer_config
         step_config: *step_config
-        config_image: &ceilometer_agent_central_image
-          list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerCeilometerCentralImage} ]
+        config_image: {get_param: DockerCeilometerConfigImage}
       kolla_config:
-        /var/lib/kolla/config_files/ceilometer-agent-central.json:
+        /var/lib/kolla/config_files/ceilometer_agent_central.json:
           command: /usr/bin/ceilometer-polling --polling-namespaces central
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
       docker_config:
         step_3:
           ceilometer_init_log:
             start_order: 0
-            image: *ceilometer_agent_central_image
+            image: &ceilometer_agent_central_image {get_param: DockerCeilometerCentralImage}
             user: root
             command: ['/bin/bash', '-c', 'chown -R ceilometer:ceilometer /var/log/ceilometer']
             volumes:
@@ -89,8 +94,8 @@ outputs:
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
-                  - /var/lib/kolla/config_files/ceilometer-agent-central.json:/var/lib/kolla/config_files/config.json:ro
-                  - /var/lib/config-data/ceilometer/etc/ceilometer/:/etc/ceilometer/:ro
+                  - /var/lib/kolla/config_files/ceilometer_agent_central.json:/var/lib/kolla/config_files/config.json:ro
+                  - /var/lib/config-data/puppet-generated/ceilometer/:/var/lib/kolla/config_files/src:ro
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
         step_5:
@@ -100,14 +105,18 @@ outputs:
             net: host
             detach: false
             privileged: false
+            user: root
             volumes:
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
                   - /var/lib/config-data/ceilometer/etc/ceilometer/:/etc/ceilometer/:ro
                   - /var/log/containers/ceilometer:/var/log/ceilometer
-            command: ["/usr/bin/ceilometer-upgrade", "--skip-metering-database"]
+            command:
+              - '/usr/bin/bootstrap_host_exec'
+              - 'ceilometer_agent_central'
+              - "su ceilometer -s /bin/bash -c '/usr/bin/ceilometer-upgrade --skip-metering-database'"
       upgrade_tasks:
         - name: Stop and disable ceilometer agent central service
           tags: step2
-          service: name=openstack-ceilometer-agent-central state=stopped enabled=no
+          service: name=openstack-ceilometer-central state=stopped enabled=no

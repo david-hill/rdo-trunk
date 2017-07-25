@@ -4,6 +4,10 @@ description: >
   Gnocchi service configured with Puppet
 
 parameters:
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
+    type: json
   ServiceNetMap:
     default: {}
     description: Mapping of service_name -> network name. Typically set
@@ -31,8 +35,12 @@ parameters:
     description: The short name of the Gnocchi indexer backend to use.
     type: string
   MetricProcessingDelay:
-    default: 60
+    default: 30
     description: Delay between processing metrics.
+    type: number
+  NumberOfStorageSacks:
+    default: 128
+    description: Number of storage sacks to create.
     type: number
   GnocchiPassword:
     description: The password for the gnocchi service and db account.
@@ -52,6 +60,13 @@ parameters:
     type: string
     default: ''
     description: Set to True to enable debugging on all services.
+  GnocchiDebug:
+    default: ''
+    description: Set to True to enable debugging Gnocchi services.
+    type: string
+
+conditions:
+  service_debug_unset: {equals : [{get_param: GnocchiDebug}, '']}
 
 outputs:
   aux_parameters:
@@ -65,7 +80,11 @@ outputs:
       config_settings:
         #Gnocchi engine
         gnocchi_redis_password: {get_param: RedisPassword}
-        gnocchi::debug: {get_param: Debug}
+        gnocchi::debug:
+          if:
+          - service_debug_unset
+          - {get_param: Debug }
+          - {get_param: GnocchiDebug }
         gnocchi::db::database_connection:
           make_url:
             scheme: {get_param: [EndpointMap, MysqlInternal, protocol]}
@@ -76,7 +95,11 @@ outputs:
             query:
               read_default_file: /etc/my.cnf.d/tripleo.cnf
               read_default_group: tripleo
-        gnocchi::db::sync::extra_opts: '--skip-storage'
+        gnocchi::db::sync::extra_opts:
+          str_replace:
+            template: " --sacks-number NUM_SACKS"
+            params:
+              NUM_SACKS: {get_param: NumberOfStorageSacks}
         gnocchi::storage::metric_processing_delay: {get_param: MetricProcessingDelay}
         gnocchi::storage::swift::swift_user: 'service:gnocchi'
         gnocchi::storage::swift::swift_auth_version: 3

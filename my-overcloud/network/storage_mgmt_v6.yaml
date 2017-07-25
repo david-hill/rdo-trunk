@@ -16,7 +16,7 @@ parameters:
     type: json
   StorageMgmtNetAdminStateUp:
     default: false
-    description: This admin state of of the network.
+    description: The admin state of the network.
     type: boolean
   StorageMgmtNetShared:
     default: false
@@ -68,3 +68,5 @@ outputs:
   OS::stack_id:
     description: Neutron storage management network
     value: {get_resource: StorageMgmtNetwork}
+  subnet_cidr:
+    value: {get_attr: StorageMgmtSubnet, cidr}

@@ -4,6 +4,10 @@ description: >
   OpenStack Panko service configured with Puppet
 
 parameters:
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
+    type: json
   ServiceNetMap:
     default: {}
     description: Mapping of service_name -> network name. Typically set
@@ -34,10 +38,17 @@ parameters:
     default: ''
     description: Set to True to enable debugging on all services.
     type: string
+  PankoDebug:
+    default: ''
+    description: Set to True to enable debugging Panko services.
+    type: string
   KeystoneRegion:
     type: string
     default: 'regionOne'
     description: Keystone region for endpoint
+
+conditions:
+  service_debug_unset: {equals : [{get_param: PankoDebug}, '']}
 
 outputs:
   role_data:
@@ -55,7 +66,11 @@ outputs:
             query:
               read_default_file: /etc/my.cnf.d/tripleo.cnf
               read_default_group: tripleo
-        panko::debug: {get_param: Debug}
+        panko::debug:
+          if:
+          - service_debug_unset
+          - {get_param: Debug }
+          - {get_param: PankoDebug }
         panko::auth::auth_url: {get_param: [EndpointMap, KeystoneInternal, uri_no_suffix] }
         panko::keystone::authtoken::project_name: 'service'
         panko::keystone::authtoken::user_domain_name: 'Default'

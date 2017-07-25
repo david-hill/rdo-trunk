@@ -8,6 +8,10 @@ parameters:
     default: ''
     description: Set to True to enable debugging on all services.
     type: string
+  HeatDebug:
+    default: ''
+    description: Set to True to enable debugging Heat services.
+    type: string
   RabbitPassword:
     description: The password for RabbitMQ
     type: string
@@ -26,6 +30,10 @@ parameters:
     default: 5672
     description: Set rabbit subscriber port, change this if using SSL
     type: number
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
+    type: json
   ServiceNetMap:
     default: {}
     description: Mapping of service_name -> network name. Typically set
@@ -111,6 +119,15 @@ parameters:
     default: 1048576
     description: Maximum raw byte size of the Heat API JSON request body.
     type: number
+  NotificationDriver:
+    type: string
+    default: 'messagingv2'
+    description: Driver or drivers to handle sending notifications.
+    constraints:
+      - allowed_values: [ 'messagingv2', 'noop' ]
+
+conditions:
+  service_debug_unset: {equals : [{get_param: HeatDebug}, '']}
 
 outputs:
   role_data:
@@ -118,11 +135,16 @@ outputs:
     value:
       service_name: heat_base
       config_settings:
+        heat::notification_driver: {get_param: NotificationDriver}
         heat::rabbit_userid: {get_param: RabbitUserName}
         heat::rabbit_password: {get_param: RabbitPassword}
         heat::rabbit_use_ssl: {get_param: RabbitClientUseSSL}
         heat::rabbit_port: {get_param: RabbitClientPort}
-        heat::debug: {get_param: Debug}
+        heat::debug:
+          if:
+          - service_debug_unset
+          - {get_param: Debug }
+          - {get_param: HeatDebug }
         heat::enable_proxy_headers_parsing: true
         heat::rpc_response_timeout: 600
         # We need this because the default heat policy.json no longer works on TripleO

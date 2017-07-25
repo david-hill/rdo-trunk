@@ -4,18 +4,20 @@ description: >
   OpenStack Glance service configured with Puppet
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerGlanceApiImage:
     description: image
-    default: 'centos-binary-glance-api:latest'
+    type: string
+  DockerGlanceApiConfigImage:
+    description: The container image to use for the glance_api config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -52,6 +54,7 @@ resources:
     type: ../../puppet/services/glance-api.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -74,47 +77,55 @@ outputs:
         config_volume: glance_api
         puppet_tags: glance_api_config,glance_api_paste_ini,glance_swift_config,glance_cache_config
         step_config: *step_config
-        config_image: &glance_image
-          list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerGlanceApiImage} ]
+        config_image: {get_param: DockerGlanceApiConfigImage}
       kolla_config:
-        /var/lib/kolla/config_files/glance-api.json:
+        /var/lib/kolla/config_files/glance_api.json:
           command: /usr/bin/glance-api --config-file /usr/share/glance/glance-api-dist.conf --config-file /etc/glance/glance-api.conf
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
         /var/lib/kolla/config_files/glance_api_tls_proxy.json:
           command: /usr/sbin/httpd -DFOREGROUND
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
       docker_config:
         # Kolla_bootstrap/db_sync runs before permissions set by kolla_config
-        step_3:
+        step_2:
           glance_init_logs:
-            start_order: 0
-            image: *glance_image
+            image: &glance_api_image {get_param: DockerGlanceApiImage}
             privileged: false
             user: root
             volumes:
               - /var/log/containers/glance:/var/log/glance
             command: ['/bin/bash', '-c', 'chown -R glance:glance /var/log/glance']
+        step_3:
           glance_api_db_sync:
-            start_order: 1
-            image: *glance_image
+            image: *glance_api_image
             net: host
             privileged: false
             detach: false
+            user: root
             volumes: &glance_volumes
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
-                  - /var/lib/kolla/config_files/glance-api.json:/var/lib/kolla/config_files/config.json
-                  - /var/lib/config-data/glance_api/etc/glance/:/etc/glance/:ro
+                  - /var/lib/kolla/config_files/glance_api.json:/var/lib/kolla/config_files/config.json
+                  - /var/lib/config-data/puppet-generated/glance_api/:/var/lib/kolla/config_files/src:ro
                   - /var/log/containers/glance:/var/log/glance
             environment:
               - KOLLA_BOOTSTRAP=True
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+            command: "/usr/bin/bootstrap_host_exec glance_api su glance -s /bin/bash -c '/usr/local/bin/kolla_start'"
         step_4:
           map_merge:
             - glance_api:
                 start_order: 2
-                image: *glance_image
+                image: *glance_api_image
                 net: host
                 privileged: false
                 restart: always
@@ -125,7 +136,7 @@ outputs:
                 - internal_tls_enabled
                 - glance_api_tls_proxy:
                     start_order: 2
-                    image: *glance_image
+                    image: *glance_api_image
                     net: host
                     user: root
                     restart: always
@@ -134,7 +145,7 @@ outputs:
                         - {get_attr: [ContainersCommon, volumes]}
                         -
                           - /var/lib/kolla/config_files/glance_api_tls_proxy.json:/var/lib/kolla/config_files/config.json:ro
-                          - /var/lib/config-data/glance_api/etc/httpd/:/etc/httpd/:ro
+                          - /var/lib/config-data/puppet-generated/glance_api/:/var/lib/kolla/config_files/src:ro
                           - /etc/pki/tls/certs/httpd:/etc/pki/tls/certs/httpd:ro
                           - /etc/pki/tls/private/httpd:/etc/pki/tls/private/httpd:ro
                     environment:
@@ -149,3 +160,5 @@ outputs:
         - name: Stop and disable glance_api service
           tags: step2
           service: name=openstack-glance-api state=stopped enabled=no
+      metadata_settings:
+        get_attr: [GlanceApiPuppetBase, role_data, metadata_settings]

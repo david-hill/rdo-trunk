@@ -4,22 +4,20 @@ description: >
   OpenStack containerized Nova API service
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerNovaApiImage:
     description: image
-    default: 'centos-binary-nova-api:latest'
     type: string
   DockerNovaConfigImage:
-    description: image
-    default: 'centos-binary-nova-base:latest'
+    description: The container image to use for the nova config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -48,6 +46,7 @@ resources:
     type: ../../puppet/services/nova-api.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -62,6 +61,9 @@ outputs:
         map_merge:
           - get_attr: [NovaApiBase, role_data, config_settings]
           - apache::default_vhost: false
+            nova_wsgi_enabled: false
+            nova::api::service_name: '%{::nova::params::api_service_name}'
+            nova::wsgi::apache_api::ssl: false
       step_config: &step_config
         list_join:
           - "\n"
@@ -73,79 +75,74 @@ outputs:
         config_volume: nova
         puppet_tags: nova_config
         step_config: *step_config
-        config_image:
-          list_join:
-          - '/'
-          - [ {get_param: DockerNamespace}, {get_param: DockerNovaConfigImage} ]
+        config_image: {get_param: DockerNovaConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/nova_api.json:
           command: /usr/bin/nova-api
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
           permissions:
             - path: /var/log/nova
               owner: nova:nova
               recurse: true
       docker_config:
         # db sync runs before permissions set by kolla_config
-        step_3:
+        step_2:
           nova_init_logs:
-            start_order: 0
-            image: &nova_api_image
-              list_join:
-                - '/'
-                - [ {get_param: DockerNamespace}, {get_param: DockerNovaApiImage} ]
+            image: &nova_api_image {get_param: DockerNovaApiImage}
             privileged: false
             user: root
             volumes:
               - /var/log/containers/nova:/var/log/nova
             command: ['/bin/bash', '-c', 'chown -R nova:nova /var/log/nova']
+        step_3:
           nova_api_db_sync:
-            start_order: 1
+            start_order: 0
             image: *nova_api_image
             net: host
             detach: false
-            volumes: &nova_api_volumes
+            user: root
+            volumes: &nova_api_bootstrap_volumes
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
-                  - /var/lib/kolla/config_files/nova_api.json:/var/lib/kolla/config_files/config.json:ro
                   - /var/lib/config-data/nova/etc/nova/:/etc/nova/:ro
                   - /var/log/containers/nova:/var/log/nova
-            command: ['/usr/bin/nova-manage', 'api_db', 'sync']
+            command: "/usr/bin/bootstrap_host_exec nova_api su nova -s /bin/bash -c '/usr/bin/nova-manage api_db sync'"
           # FIXME: we probably want to wait on the 'cell_v2 update' in order for this
           # to be capable of upgrading a baremetal setup. This is to ensure the name
           # of the cell is 'default'
           nova_api_map_cell0:
+            start_order: 1
+            image: *nova_api_image
+            net: host
+            detach: false
+            user: root
+            volumes: *nova_api_bootstrap_volumes
+            command: "/usr/bin/bootstrap_host_exec nova_api su nova -s /bin/bash -c '/usr/bin/nova-manage cell_v2 map_cell0'"
+          nova_api_create_default_cell:
             start_order: 2
             image: *nova_api_image
             net: host
             detach: false
-            volumes: *nova_api_volumes
-            command:
-              - '/usr/bin/nova-manage'
-              - 'cell_v2'
-              - 'map_cell0'
-          nova_api_create_default_cell:
-            start_order: 3
-            image: *nova_api_image
-            net: host
-            detach: false
-            volumes: *nova_api_volumes
+            volumes: *nova_api_bootstrap_volumes
             # NOTE: allowing the exit code 2 is a dirty way of making
             # this idempotent (if the resource already exists a conflict
             # is raised)
             exit_codes: [0,2]
-            command:
-              - '/usr/bin/nova-manage'
-              - 'cell_v2'
-              - 'create_cell'
-              - '--name="default"'
+            user: root
+            command: "/usr/bin/bootstrap_host_exec nova_api su nova -s /bin/bash -c '/usr/bin/nova-manage cell_v2 create_cell --name=default'"
           nova_db_sync:
-            start_order: 4
+            start_order: 3
             image: *nova_api_image
             net: host
             detach: false
-            volumes: *nova_api_volumes
-            command: ['/usr/bin/nova-manage', 'db', 'sync']
+            volumes: *nova_api_bootstrap_volumes
+            user: root
+            command: "/usr/bin/bootstrap_host_exec nova_api su nova -s /bin/bash -c '/usr/bin/nova-manage db sync'"
         step_4:
           nova_api:
             start_order: 2
@@ -154,20 +151,34 @@ outputs:
             user: nova
             privileged: true
             restart: always
+            volumes: &nova_api_volumes
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/kolla/config_files/nova_api.json:/var/lib/kolla/config_files/config.json:ro
+                  - /var/lib/config-data/puppet-generated/nova/:/var/lib/kolla/config_files/src:ro
+                  - /var/log/containers/nova:/var/log/nova
+            environment:
+              - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+          nova_api_cron:
+            image: *nova_api_image
+            net: host
+            user: root
+            privileged: true
+            restart: always
             volumes: *nova_api_volumes
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+            command: "/usr/sbin/crond -n"
         step_5:
           nova_api_discover_hosts:
             start_order: 1
             image: *nova_api_image
             net: host
             detach: false
-            volumes: *nova_api_volumes
-            command:
-              - '/usr/bin/nova-manage'
-              - 'cell_v2'
-              - 'discover_hosts'
+            volumes: *nova_api_bootstrap_volumes
+            user: root
+            command: "/usr/bin/bootstrap_host_exec nova_api su nova -s /bin/bash -c '/usr/bin/nova-manage cell_v2 discover_hosts'"
       host_prep_tasks:
         - name: create persistent logs directory
           file:

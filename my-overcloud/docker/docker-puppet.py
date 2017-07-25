@@ -18,21 +18,35 @@
 # that can be used to generate config files or run ad-hoc puppet modules
 # inside of a container.
 
+import glob
 import json
 import logging
 import os
+import sys
 import subprocess
 import sys
 import tempfile
 import multiprocessing
 
-log = logging.getLogger()
-log.setLevel(logging.DEBUG)
-ch = logging.StreamHandler(sys.stdout)
-ch.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
-ch.setFormatter(formatter)
-log.addHandler(ch)
+logger = None
+
+def get_logger():
+    global logger
+    if logger is None:
+        logger = logging.getLogger()
+        ch = logging.StreamHandler(sys.stdout)
+        if os.environ.get('DEBUG', False):
+            logger.setLevel(logging.DEBUG)
+            ch.setLevel(logging.DEBUG)
+        else:
+            logger.setLevel(logging.INFO)
+            ch.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s %(levelname)s: '
+                                      '%(process)s -- %(message)s')
+        ch.setFormatter(formatter)
+        logger.addHandler(ch)
+    return logger
+
 
 # this is to match what we do in deployed-server
 def short_hostname():
@@ -53,6 +67,28 @@ def pull_image(name):
         log.debug(cmd_stdout)
     if cmd_stderr:
         log.debug(cmd_stderr)
+
+
+def match_config_volume(prefix, config):
+    # Match the mounted config volume - we can't just use the
+    # key as e.g "novacomute" consumes config-data/nova
+    volumes = config.get('volumes', [])
+    config_volume=None
+    for v in volumes:
+        if v.startswith(prefix):
+            config_volume =  os.path.relpath(
+                v.split(":")[0], prefix).split("/")[0]
+            break
+    return config_volume
+
+
+def get_config_hash(prefix, config_volume):
+    hashfile = os.path.join(prefix, "%s.md5sum" % config_volume)
+    hash_data = None
+    if os.path.isfile(hashfile):
+        with open(hashfile) as f:
+            hash_data = f.read().rstrip()
+    return hash_data
 
 
 def rm_container(name):
@@ -81,7 +117,7 @@ def rm_container(name):
 
 process_count = int(os.environ.get('PROCESS_COUNT',
                                    multiprocessing.cpu_count()))
-
+log = get_logger()
 log.info('Running docker-puppet')
 config_file = os.environ.get('CONFIG', '/var/lib/docker-puppet/docker-puppet.json')
 log.debug('CONFIG: %s' % config_file)
@@ -121,11 +157,11 @@ for service in (json_data or []):
     if not manifest or not config_image:
         continue
 
-    log.debug('config_volume %s' % config_volume)
-    log.debug('puppet_tags %s' % puppet_tags)
-    log.debug('manifest %s' % manifest)
-    log.debug('config_image %s' % config_image)
-    log.debug('volumes %s' % volumes)
+    log.info('config_volume %s' % config_volume)
+    log.info('puppet_tags %s' % puppet_tags)
+    log.info('manifest %s' % manifest)
+    log.info('config_image %s' % config_image)
+    log.info('volumes %s' % volumes)
     # We key off of config volume for all configs.
     if config_volume in configs:
         # Append puppet tags and manifest.
@@ -146,7 +182,8 @@ for service in (json_data or []):
 log.info('Service compilation completed.')
 
 def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volumes)):
-
+    log = get_logger()
+    log.info('Started processing puppet configs')
     log.debug('config_volume %s' % config_volume)
     log.debug('puppet_tags %s' % puppet_tags)
     log.debug('manifest %s' % manifest)
@@ -166,33 +203,37 @@ def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volume
         if [ -n "$PUPPET_TAGS" ]; then
             TAGS="--tags \"$PUPPET_TAGS\""
         fi
-        FACTER_hostname=$HOSTNAME FACTER_uuid=docker /usr/bin/puppet apply --verbose $TAGS /etc/config.pp
+
+        # Create a reference timestamp to easily find all files touched by
+        # puppet. The sync ensures we get all the files we want due to
+        # different timestamp.
+        touch /tmp/the_origin_of_time
+        sync
+
+        FACTER_hostname=$HOSTNAME FACTER_uuid=docker /usr/bin/puppet apply \
+        --color=false --logdest syslog $TAGS /etc/config.pp
 
         # Disables archiving
         if [ -z "$NO_ARCHIVE" ]; then
-            rm -Rf /var/lib/config-data/${NAME}
+            archivedirs=("/etc" "/root" "/opt" "/var/lib/ironic/tftpboot" "/var/lib/ironic/httpboot" "/var/www" "/var/spool/cron")
+            rsync_srcs=""
+            for d in "${archivedirs[@]}"; do
+                if [ -d "$d" ]; then
+                    rsync_srcs+=" $d"
+                fi
+            done
+            rsync -a -R --delay-updates --delete-after $rsync_srcs /var/lib/config-data/${NAME}
 
-            # copying etc should be enough for most services
-            mkdir -p /var/lib/config-data/${NAME}/etc
-            cp -a /etc/* /var/lib/config-data/${NAME}/etc/
+            # Also make a copy of files modified during puppet run
+            # This is useful for debugging
+            mkdir -p /var/lib/config-data/puppet-generated/${NAME}
+            rsync -a -R -0 --delay-updates --delete-after \
+                          --files-from=<(find $rsync_srcs -newer /tmp/the_origin_of_time -not -path '/etc/puppet*' -print0) \
+                          / /var/lib/config-data/puppet-generated/${NAME}
 
-            if [ -d /root/ ]; then
-              cp -a /root/ /var/lib/config-data/${NAME}/root/
-            fi
-            if [ -d /var/lib/ironic/tftpboot/ ]; then
-              mkdir -p /var/lib/config-data/${NAME}/var/lib/ironic/
-              cp -a /var/lib/ironic/tftpboot/ /var/lib/config-data/${NAME}/var/lib/ironic/tftpboot/
-            fi
-            if [ -d /var/lib/ironic/httpboot/ ]; then
-              mkdir -p /var/lib/config-data/${NAME}/var/lib/ironic/
-              cp -a /var/lib/ironic/httpboot/ /var/lib/config-data/${NAME}/var/lib/ironic/httpboot/
-            fi
-
-            # apache services may files placed in /var/www/
-            if [ -d /var/www/ ]; then
-             mkdir -p /var/lib/config-data/${NAME}/var/www
-             cp -a /var/www/* /var/lib/config-data/${NAME}/var/www/
-            fi
+            # Write a checksum of the config-data dir, this is used as a
+            # salt to trigger container restart when the config changes
+            tar -c -f - /var/lib/config-data/${NAME} --mtime='1970-01-01' | md5sum | awk '{print $1}' > /var/lib/config-data/${NAME}.md5sum
         fi
         """)
 
@@ -217,6 +258,8 @@ def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volume
                 '--volume', '/usr/share/openstack-puppet/modules/:/usr/share/openstack-puppet/modules/:ro',
                 '--volume', '/var/lib/config-data/:/var/lib/config-data/:rw',
                 '--volume', 'tripleo_logs:/var/log/tripleo/',
+                # Syslog socket for puppet logs
+                '--volume', '/dev/log:/dev/log',
                 # OpenSSL trusted CA injection
                 '--volume', '/etc/pki/ca-trust/extracted:/etc/pki/ca-trust/extracted:ro',
                 '--volume', '/etc/pki/tls/certs/ca-bundle.crt:/etc/pki/tls/certs/ca-bundle.crt:ro',
@@ -247,15 +290,21 @@ def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volume
         subproc = subprocess.Popen(dcmd, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, env=env)
         cmd_stdout, cmd_stderr = subproc.communicate()
-        if cmd_stdout:
-            log.debug(cmd_stdout)
-        if cmd_stderr:
-            log.debug(cmd_stderr)
         if subproc.returncode != 0:
             log.error('Failed running docker-puppet.py for %s' % config_volume)
+            if cmd_stdout:
+                log.error(cmd_stdout)
+            if cmd_stderr:
+                log.error(cmd_stderr)
         else:
+            if cmd_stdout:
+                log.debug(cmd_stdout)
+            if cmd_stderr:
+                log.debug(cmd_stderr)
             # only delete successful runs, for debugging
             rm_container('docker-puppet-%s' % config_volume)
+
+        log.info('Finished processing puppet configs')
         return subproc.returncode
 
 # Holds all the information for each process to consume.
@@ -273,9 +322,9 @@ for config_volume in configs:
     volumes = service[4] if len(service) > 4 else []
 
     if puppet_tags:
-        puppet_tags = "file,file_line,concat,augeas,%s" % puppet_tags
+        puppet_tags = "file,file_line,concat,augeas,cron,%s" % puppet_tags
     else:
-        puppet_tags = "file,file_line,concat,augeas"
+        puppet_tags = "file,file_line,concat,augeas,cron"
 
     process_map.append([config_volume, puppet_tags, manifest, config_image, volumes])
 
@@ -292,6 +341,31 @@ for returncode, config_volume in zip(returncodes, config_volumes):
     if returncode != 0:
         log.error('ERROR configuring %s' % config_volume)
         success = False
+
+
+# Update the startup configs with the config hash we generated above
+config_volume_prefix = os.environ.get('CONFIG_VOLUME_PREFIX', '/var/lib/config-data')
+log.debug('CONFIG_VOLUME_PREFIX: %s' % config_volume_prefix)
+startup_configs = os.environ.get('STARTUP_CONFIG_PATTERN', '/var/lib/tripleo-config/docker-container-startup-config-step_*.json')
+log.debug('STARTUP_CONFIG_PATTERN: %s' % startup_configs)
+infiles = glob.glob('/var/lib/tripleo-config/docker-container-startup-config-step_*.json')
+for infile in infiles:
+    with open(infile) as f:
+        infile_data = json.load(f)
+
+    for k, v in infile_data.iteritems():
+        config_volume = match_config_volume(config_volume_prefix, v)
+        if config_volume:
+            config_hash = get_config_hash(config_volume_prefix, config_volume)
+            if config_hash:
+                env = v.get('environment', [])
+                env.append("TRIPLEO_CONFIG_HASH=%s" % config_hash)
+                log.debug("Updating config hash for %s, config_volume=%s hash=%s" % (k, config_volume, config_hash))
+                infile_data[k]['environment'] = env
+
+    outfile = os.path.join(os.path.dirname(infile), "hashed-" + os.path.basename(infile))
+    with open(outfile, 'w') as out_f:
+        json.dump(infile_data, out_f)
 
 if not success:
     sys.exit(1)

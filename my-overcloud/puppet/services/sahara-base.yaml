@@ -4,6 +4,10 @@ description: >
   OpenStack Sahara base service. Shared for all Sahara services.
 
 parameters:
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
+    type: json
   ServiceNetMap:
     default: {}
     description: Mapping of service_name -> network name. Typically set
@@ -52,10 +56,23 @@ parameters:
     type: string
     default: ''
     description: Set to True to enable debugging on all services.
+  SaharaDebug:
+    default: ''
+    description: Set to True to enable debugging Sahara services.
+    type: string
   SaharaPlugins:
     default: ["ambari","cdh","mapr","vanilla","spark","storm"]
     description: Sahara enabled plugin list
     type: comma_delimited_list
+  NotificationDriver:
+    type: string
+    default: 'messagingv2'
+    description: Driver or drivers to handle sending notifications.
+    constraints:
+      - allowed_values: [ 'messagingv2', 'noop' ]
+
+conditions:
+  service_debug_unset: {equals : [{get_param: SaharaDebug}, '']}
 
 outputs:
   role_data:
@@ -73,11 +90,16 @@ outputs:
             query:
               read_default_file: /etc/my.cnf.d/tripleo.cnf
               read_default_group: tripleo
+        sahara::notify::notification_driver: {get_param: NotificationDriver}
         sahara::rabbit_password: {get_param: RabbitPassword}
         sahara::rabbit_user: {get_param: RabbitUserName}
         sahara::rabbit_use_ssl: {get_param: RabbitClientUseSSL}
         sahara::rabbit_port: {get_param: RabbitClientPort}
-        sahara::debug: {get_param: Debug}
+        sahara::debug:
+          if:
+          - service_debug_unset
+          - {get_param: Debug }
+          - {get_param: SaharaDebug }
         # Remove admin_password when https://review.openstack.org/442619 is merged.
         sahara::admin_password: {get_param: SaharaPassword}
         sahara::use_neutron: true

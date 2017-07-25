@@ -4,18 +4,20 @@ description: >
   MySQL service deployment using puppet
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerMysqlImage:
     description: image
-    default: 'centos-binary-mariadb:latest'
+    type: string
+  DockerMysqlConfigImage:
+    description: The container image to use for the mysql config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -45,6 +47,7 @@ resources:
     type: ../../../puppet/services/database/mysql.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -74,30 +77,31 @@ outputs:
         config_volume: mysql
         puppet_tags: file # set this even though file is the default
         step_config: *step_config
-        config_image: &mysql_image
-          list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerMysqlImage} ]
+        config_image: &mysql_config_image {get_param: DockerMysqlConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/mysql.json:
           command: /usr/bin/mysqld_safe
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
           permissions:
             - path: /var/lib/mysql
               owner: mysql:mysql
               recurse: true
       docker_config:
         # Kolla_bootstrap runs before permissions set by kolla_config
-        step_2:
+        step_1:
           mysql_init_logs:
-            start_order: 0
-            image: *mysql_image
+            image: &mysql_image {get_param: DockerMysqlImage}
             privileged: false
             user: root
             volumes:
               - /var/log/containers/mysql:/var/log/mariadb
             command: ['/bin/bash', '-c', 'chown -R mysql:mysql /var/log/mariadb']
+        step_2:
           mysql_bootstrap:
-            start_order: 1
             detach: false
             image: *mysql_image
             net: host
@@ -105,7 +109,7 @@ outputs:
             command: ['bash', '-c', 'test -e /var/lib/mysql/mysql || kolla_start']
             volumes: &mysql_volumes
               - /var/lib/kolla/config_files/mysql.json:/var/lib/kolla/config_files/config.json
-              - /var/lib/config-data/mysql/etc/:/etc/:ro
+              - /var/lib/config-data/puppet-generated/mysql/:/var/lib/kolla/config_files/src:ro
               - /etc/localtime:/etc/localtime:ro
               - /etc/hosts:/etc/hosts:ro
               - /var/lib/mysql:/var/lib/mysql
@@ -140,7 +144,7 @@ outputs:
           config_volume: 'mysql_init_tasks'
           puppet_tags: 'mysql_database,mysql_grant,mysql_user'
           step_config: 'include ::tripleo::profile::base::database::mysql'
-          config_image: *mysql_image
+          config_image: *mysql_config_image
           volumes:
             - /var/lib/mysql:/var/lib/mysql/:ro
             - /var/log/containers/mysql:/var/log/mariadb

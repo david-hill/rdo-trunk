@@ -16,7 +16,7 @@ parameters:
     type: json
   ManagementNetAdminStateUp:
     default: false
-    description: This admin state of of the network.
+    description: The admin state of the network.
     type: boolean
   ManagementNetShared:
     default: false
@@ -67,3 +67,5 @@ outputs:
   OS::stack_id:
     description: Neutron management network
     value: {get_resource: ManagementNetwork}
+  subnet_cidr:
+    value: {get_attr: ManagementSubnet, cidr}

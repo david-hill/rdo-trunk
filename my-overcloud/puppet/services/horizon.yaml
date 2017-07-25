@@ -4,6 +4,10 @@ description: >
   Horizon service configured with Puppet
 
 parameters:
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
+    type: json
   ServiceNetMap:
     default: {}
     description: Mapping of service_name -> network name. Typically set
@@ -13,6 +17,10 @@ parameters:
   Debug:
     default: ''
     description: Set to True to enable debugging on all services.
+    type: string
+  HorizonDebug:
+    default: false
+    description: Set to True to enable debugging Horizon service.
     type: string
   DefaultPasswords:
     default: {}
@@ -51,7 +59,7 @@ parameters:
   HorizonSecureCookies:
     description: Set CSRF_COOKIE_SECURE / SESSION_COOKIE_SECURE in Horizon
     type: boolean
-    default: true
+    default: false
   MemcachedIPv6:
     default: false
     description: Enable IPv6 features in Memcached.
@@ -62,7 +70,7 @@ parameters:
 
 conditions:
 
-  debug_empty: {equals : [{get_param: Debug}, '']}
+  debug_unset: {equals : [{get_param: Debug}, '']}
 
 outputs:
   role_data:
@@ -85,7 +93,6 @@ outputs:
           horizon::cache_backend: django.core.cache.backends.memcached.MemcachedCache
           horizon::django_session_engine: 'django.contrib.sessions.backends.cache'
           horizon::vhost_extra_params:
-            add_listen: false
             priority: 10
             access_log_format: '%a %l %u %t \"%r\" %>s %b \"%%{}{Referer}i\" \"%%{}{User-Agent}i\"'
             options: ['FollowSymLinks','MultiViews']
@@ -104,9 +111,9 @@ outputs:
           memcached_ipv6: {get_param: MemcachedIPv6}
         -
           if:
-          - debug_empty
-          - {}
-          - horizon::django_debug: {get_param: Debug}
+          - debug_unset
+          - horizon::django_debug: { get_param: HorizonDebug }
+          - horizon::django_debug: { get_param: Debug }
       step_config: |
         include ::tripleo::profile::base::horizon
       # Ansible tasks to handle upgrade

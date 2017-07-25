@@ -15,7 +15,7 @@ parameters:
     type: json
   InternalApiNetAdminStateUp:
     default: false
-    description: This admin state of the network.
+    description: The admin state of the network.
     type: boolean
   InternalApiNetEnableDHCP:
     default: false
@@ -61,3 +61,5 @@ outputs:
   OS::stack_id:
     description: Neutron internal network
     value: {get_resource: InternalApiNetwork}
+  subnet_cidr:
+    value: {get_attr: InternalApiSubnet, cidr}

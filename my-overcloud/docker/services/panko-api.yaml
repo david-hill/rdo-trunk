@@ -6,18 +6,20 @@ description: >
   will be disabled in future releases.
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerPankoApiImage:
     description: image
-    default: 'centos-binary-panko-api:latest'
+    type: string
+  DockerPankoConfigImage:
+    description: The container image to use for the panko config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -53,6 +55,7 @@ resources:
     type: ../../puppet/services/panko-api.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -75,43 +78,45 @@ outputs:
         config_volume: panko
         puppet_tags: panko_api_paste_ini,panko_config
         step_config: *step_config
-        config_image: &panko_image
-          list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerPankoApiImage} ]
+        config_image: {get_param: DockerPankoConfigImage}
       kolla_config:
-        /var/lib/kolla/config_files/panko-api.json:
+        /var/lib/kolla/config_files/panko_api.json:
           command: /usr/sbin/httpd -DFOREGROUND
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
           permissions:
             - path: /var/log/panko
               owner: panko:panko
               recurse: true
       docker_config:
-        step_3:
-          panko-init-log:
-            start_order: 0
-            image: *panko_image
+        step_2:
+          panko_init_log:
+            image: &panko_api_image {get_param: DockerPankoApiImage}
             user: root
             volumes:
               - /var/log/containers/panko:/var/log/panko
             command: ['/bin/bash', '-c', 'mkdir -p /var/log/httpd; chown -R panko:panko /var/log/panko']
+        step_3:
           panko_db_sync:
-            start_order: 1
-            image: *panko_image
+            image: *panko_api_image
             net: host
             detach: false
             privileged: false
+            user: root
             volumes:
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
                   - /var/lib/config-data/panko/etc/panko:/etc/panko:ro
                   - /var/log/containers/panko:/var/log/panko
-            command: /usr/bin/panko-dbsync
+            command: "/usr/bin/bootstrap_host_exec panko_api su panko -s /bin/bash -c '/usr/bin/panko-dbsync'"
         step_4:
           panko_api:
             start_order: 2
-            image: *panko_image
+            image: *panko_api_image
             net: host
             privileged: false
             restart: always
@@ -119,10 +124,8 @@ outputs:
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
-                  - /var/lib/kolla/config_files/panko-api.json:/var/lib/kolla/config_files/config.json:ro
-                  - /var/lib/config-data/panko/etc/panko/:/etc/panko/:ro
-                  - /var/lib/config-data/panko/etc/httpd/:/etc/httpd/:ro
-                  - /var/lib/config-data/panko/var/www/:/var/www/:ro
+                  - /var/lib/kolla/config_files/panko_api.json:/var/lib/kolla/config_files/config.json:ro
+                  - /var/lib/config-data/puppet-generated/panko/:/var/lib/kolla/config_files/src:ro
                   - /var/log/containers/panko:/var/log/panko
                   -
                     if:

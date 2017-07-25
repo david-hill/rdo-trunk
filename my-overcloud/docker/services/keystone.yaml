@@ -4,18 +4,20 @@ description: >
   OpenStack containerized Keystone service
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerKeystoneImage:
     description: image
-    default: 'centos-binary-keystone:latest'
+    type: string
+  DockerKeystoneConfigImage:
+    description: The container image to use for the keystone config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -57,6 +59,7 @@ resources:
     type: ../../puppet/services/keystone.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -86,27 +89,29 @@ outputs:
         config_volume: keystone
         puppet_tags: keystone_config
         step_config: *step_config
-        config_image: &keystone_image
-          list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerKeystoneImage} ]
+        config_image: &keystone_config_image {get_param: DockerKeystoneConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/keystone.json:
           command: /usr/sbin/httpd -DFOREGROUND
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
       docker_config:
         # Kolla_bootstrap/db sync runs before permissions set by kolla_config
-        step_3:
+        step_2:
           keystone_init_log:
-            start_order: 0
-            image: *keystone_image
+            image: &keystone_image {get_param: DockerKeystoneImage}
             user: root
             command: ['/bin/bash', '-c', 'mkdir -p /var/log/httpd; chown -R keystone:keystone /var/log/keystone']
             volumes:
               - /var/log/containers/keystone:/var/log/keystone
+        step_3:
           keystone_db_sync:
-            start_order: 1
             image: *keystone_image
             net: host
+            user: root
             privileged: false
             detach: false
             volumes: &keystone_volumes
@@ -114,9 +119,7 @@ outputs:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
                   - /var/lib/kolla/config_files/keystone.json:/var/lib/kolla/config_files/config.json:ro
-                  - /var/lib/config-data/keystone/var/www/:/var/www/:ro
-                  - /var/lib/config-data/keystone/etc/keystone/:/etc/keystone/:ro
-                  - /var/lib/config-data/keystone/etc/httpd/:/etc/httpd/:ro
+                  - /var/lib/config-data/puppet-generated/keystone/:/var/lib/kolla/config_files/src:ro
                   - /var/log/containers/keystone:/var/log/keystone
                   -
                     if:
@@ -131,8 +134,9 @@ outputs:
             environment:
               - KOLLA_BOOTSTRAP=True
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+            command: ['/usr/bin/bootstrap_host_exec', 'keystone', '/usr/local/bin/kolla_start']
           keystone:
-            start_order: 1
+            start_order: 2
             image: *keystone_image
             net: host
             privileged: false
@@ -141,17 +145,18 @@ outputs:
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
           keystone_bootstrap:
-            start_order: 2
+            start_order: 3
             action: exec
+            user: root
             command:
-              [ 'keystone', 'keystone-manage', 'bootstrap', '--bootstrap-password', {get_param: AdminPassword} ]
+              [ 'keystone', '/usr/bin/bootstrap_host_exec', 'keystone' ,'keystone-manage', 'bootstrap', '--bootstrap-password', {get_param: AdminPassword} ]
       docker_puppet_tasks:
         # Keystone endpoint creation occurs only on single node
         step_3:
           config_volume: 'keystone_init_tasks'
           puppet_tags: 'keystone_config,keystone_domain_config,keystone_endpoint,keystone_identity_provider,keystone_paste_ini,keystone_role,keystone_service,keystone_tenant,keystone_user,keystone_user_role,keystone_domain'
           step_config: 'include ::tripleo::profile::base::keystone'
-          config_image: *keystone_image
+          config_image: *keystone_config_image
       host_prep_tasks:
         - name: create persistent logs directory
           file:

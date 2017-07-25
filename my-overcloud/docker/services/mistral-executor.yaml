@@ -4,22 +4,20 @@ description: >
   OpenStack containerized Mistral Executor service
 
 parameters:
-  DockerNamespace:
-    description: namespace
-    default: 'tripleoupstream'
-    type: string
   DockerMistralExecutorImage:
     description: image
-    default: 'centos-binary-mistral-executor:latest'
     type: string
   DockerMistralConfigImage:
-    description: image
-    default: 'centos-binary-mistral-api:latest'
+    description: The container image to use for the mistral config_volume
     type: string
   EndpointMap:
     default: {}
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
+    type: json
+  ServiceData:
+    default: {}
+    description: Dictionary packing service data
     type: json
   ServiceNetMap:
     default: {}
@@ -49,6 +47,7 @@ resources:
     type: ../../puppet/services/mistral-executor.yaml
     properties:
       EndpointMap: {get_param: EndpointMap}
+      ServiceData: {get_param: ServiceData}
       ServiceNetMap: {get_param: ServiceNetMap}
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
@@ -70,13 +69,15 @@ outputs:
         config_volume: mistral
         puppet_tags: mistral_config
         step_config: *step_config
-        config_image:
-          list_join:
-            - '/'
-            - [ {get_param: DockerNamespace}, {get_param: DockerMistralConfigImage} ]
+        config_image: {get_param: DockerMistralConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/mistral_executor.json:
           command: /usr/bin/mistral-server --config-file=/etc/mistral/mistral.conf --log-file=/var/log/mistral/executor.log --server=executor
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
           permissions:
             - path: /var/log/mistral
               owner: mistral:mistral
@@ -84,10 +85,7 @@ outputs:
       docker_config:
         step_4:
           mistral_executor:
-            image:
-              list_join:
-                - '/'
-                - [ {get_param: DockerNamespace}, {get_param: DockerMistralExecutorImage} ]
+            image: {get_param: DockerMistralExecutorImage}
             net: host
             privileged: false
             restart: always
@@ -96,7 +94,7 @@ outputs:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
                   - /var/lib/kolla/config_files/mistral_executor.json:/var/lib/kolla/config_files/config.json:ro
-                  - /var/lib/config-data/mistral/etc/mistral/:/etc/mistral/:ro
+                  - /var/lib/config-data/puppet-generated/mistral/:/var/lib/kolla/config_files/src:ro
                   - /run:/run
                   # FIXME: this is required in order for Nova cells
                   # initialization workflows on the Undercloud. Need to
@@ -111,6 +109,18 @@ outputs:
             path: /var/log/containers/mistral
             state: directory
       upgrade_tasks:
+        - name: Check if mistral executor is deployed
+          command: systemctl is-enabled openstack-mistral-executor
+          tags: common
+          ignore_errors: True
+          register: mistral_executor_enabled
+        - name: "PreUpgrade step0,validation: Check if openstack-mistral-executor is running"
+          shell: >
+            /usr/bin/systemctl show 'openstack-mistral-executor' --property ActiveState |
+            grep '\bactive\b'
+          when: mistral_executor_enabled.rc == 0
+          tags: step0,validation
         - name: Stop and disable mistral_executor service
           tags: step2
+          when: mistral_executor_enabled.rc == 0
           service: name=openstack-mistral-executor state=stopped enabled=no

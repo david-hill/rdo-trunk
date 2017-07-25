@@ -72,8 +72,8 @@ parameter_defaults:
     IronicAdmin: {protocol: 'https', port: '6385', host: 'CLOUDNAME'}
     IronicInternal: {protocol: 'https', port: '6385', host: 'CLOUDNAME'}
     IronicPublic: {protocol: 'https', port: '13385', host: 'CLOUDNAME'}
-    IronicInspectorAdmin: {protocol: 'http', port: '5050', host: 'CLOUDNAME'}
-    IronicInspectorInternal: {protocol: 'http', port: '5050', host: 'CLOUDNAME'}
+    IronicInspectorAdmin: {protocol: 'https', port: '5050', host: 'CLOUDNAME'}
+    IronicInspectorInternal: {protocol: 'https', port: '5050', host: 'CLOUDNAME'}
     IronicInspectorPublic: {protocol: 'https', port: '13050', host: 'CLOUDNAME'}
     KeystoneAdmin: {protocol: 'https', port: '35357', host: 'CLOUDNAME'}
     KeystoneInternal: {protocol: 'https', port: '5000', host: 'CLOUDNAME'}
@@ -100,9 +100,9 @@ parameter_defaults:
     OctaviaAdmin: {protocol: 'https', port: '9876', host: 'IP_ADDRESS'}
     OctaviaInternal: {protocol: 'https', port: '9876', host: 'IP_ADDRESS'}
     OctaviaPublic: {protocol: 'https', port: '13876', host: 'CLOUDNAME'}
-    PankoAdmin: {protocol: 'https', port: '8779', host: 'CLOUDNAME'}
-    PankoInternal: {protocol: 'https', port: '8779', host: 'CLOUDNAME'}
-    PankoPublic: {protocol: 'https', port: '13779', host: 'CLOUDNAME'}
+    PankoAdmin: {protocol: 'https', port: '8977', host: 'CLOUDNAME'}
+    PankoInternal: {protocol: 'https', port: '8977', host: 'CLOUDNAME'}
+    PankoPublic: {protocol: 'https', port: '13977', host: 'CLOUDNAME'}
     SaharaAdmin: {protocol: 'https', port: '8386', host: 'CLOUDNAME'}
     SaharaInternal: {protocol: 'https', port: '8386', host: 'CLOUDNAME'}
     SaharaPublic: {protocol: 'https', port: '13386', host: 'CLOUDNAME'}
