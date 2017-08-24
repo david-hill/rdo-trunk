@@ -16,6 +16,7 @@ parameter_defaults:
     - OS::TripleO::Services::Securetty
     - OS::TripleO::Services::NovaCompute
     - OS::TripleO::Services::NovaLibvirt
+    - OS::TripleO::Services::NovaMigrationTarget
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::ComputeNeutronCorePlugin
     - OS::TripleO::Services::ComputeNeutronOvsAgent
@@ -25,6 +26,7 @@ parameter_defaults:
     - OS::TripleO::Services::ComputeNeutronMetadataAgent
     - OS::TripleO::Services::TripleoPackages
     - OS::TripleO::Services::TripleoFirewall
+    - OS::TripleO::Services::Tuned
     - OS::TripleO::Services::NeutronSriovAgent
     - OS::TripleO::Services::OpenDaylightOvs
     - OS::TripleO::Services::SensuClient
@@ -37,3 +39,4 @@ parameter_defaults:
     - OS::TripleO::Services::MySQLClient
     - OS::TripleO::Services::Docker
     - OS::TripleO::Services::Iscsid
+    - OS::TripleO::Services::OVNController

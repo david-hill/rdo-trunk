@@ -36,11 +36,21 @@ parameters:
     default: {}
     description: Parameters specific to the role
     type: json
+  EnableInternalTLS:
+    type: boolean
+    default: false
+
+conditions:
+
+  internal_tls_enabled: {equals: [{get_param: EnableInternalTLS}, true]}
 
 resources:
 
   ContainersCommon:
     type: ./containers-common.yaml
+
+  MySQLClient:
+    type: ../../puppet/services/database/mysql-client.yaml
 
   NovaApiBase:
     type: ../../puppet/services/nova-api.yaml
@@ -61,14 +71,12 @@ outputs:
         map_merge:
           - get_attr: [NovaApiBase, role_data, config_settings]
           - apache::default_vhost: false
-            nova_wsgi_enabled: false
-            nova::api::service_name: '%{::nova::params::api_service_name}'
-            nova::wsgi::apache_api::ssl: false
       step_config: &step_config
         list_join:
           - "\n"
           - - "['Nova_cell_v2'].each |String $val| { noop_resource($val) }"
             - {get_attr: [NovaApiBase, role_data, step_config]}
+            - {get_attr: [MySQLClient, role_data, step_config]}
       service_config_settings: {get_attr: [NovaApiBase, role_data, service_config_settings]}
       # BEGIN DOCKER SETTINGS
       puppet_config:
@@ -78,7 +86,18 @@ outputs:
         config_image: {get_param: DockerNovaConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/nova_api.json:
-          command: /usr/bin/nova-api
+          command: /usr/sbin/httpd -DFOREGROUND
+          config_files:
+            - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
+          permissions:
+            - path: /var/log/nova
+              owner: nova:nova
+              recurse: true
+        /var/lib/kolla/config_files/nova_api_cron.json:
+          command: /usr/sbin/crond -n
           config_files:
             - source: "/var/lib/kolla/config_files/src/*"
               dest: "/"
@@ -97,7 +116,7 @@ outputs:
             user: root
             volumes:
               - /var/log/containers/nova:/var/log/nova
-            command: ['/bin/bash', '-c', 'chown -R nova:nova /var/log/nova']
+            command: ['/bin/bash', '-c', 'mkdir -p /var/log/httpd; chown -R nova:nova /var/log/nova']
         step_3:
           nova_api_db_sync:
             start_order: 0
@@ -148,28 +167,43 @@ outputs:
             start_order: 2
             image: *nova_api_image
             net: host
-            user: nova
+            user: root
             privileged: true
             restart: always
-            volumes: &nova_api_volumes
+            volumes:
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
                   - /var/lib/kolla/config_files/nova_api.json:/var/lib/kolla/config_files/config.json:ro
                   - /var/lib/config-data/puppet-generated/nova/:/var/lib/kolla/config_files/src:ro
                   - /var/log/containers/nova:/var/log/nova
+                  -
+                    if:
+                      - internal_tls_enabled
+                      - /etc/pki/tls/certs/httpd:/etc/pki/tls/certs/httpd:ro
+                      - ''
+                  -
+                    if:
+                      - internal_tls_enabled
+                      - /etc/pki/tls/private/httpd:/etc/pki/tls/private/httpd:ro
+                      - ''
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
           nova_api_cron:
             image: *nova_api_image
             net: host
             user: root
-            privileged: true
+            privileged: false
             restart: always
-            volumes: *nova_api_volumes
+            volumes:
+              list_concat:
+                - {get_attr: [ContainersCommon, volumes]}
+                -
+                  - /var/lib/kolla/config_files/nova_api_cron.json:/var/lib/kolla/config_files/config.json:ro
+                  - /var/lib/config-data/puppet-generated/nova/:/var/lib/kolla/config_files/src:ro
+                  - /var/log/containers/nova:/var/log/nova
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
-            command: "/usr/sbin/crond -n"
         step_5:
           nova_api_discover_hosts:
             start_order: 1
@@ -179,6 +213,8 @@ outputs:
             volumes: *nova_api_bootstrap_volumes
             user: root
             command: "/usr/bin/bootstrap_host_exec nova_api su nova -s /bin/bash -c '/usr/bin/nova-manage cell_v2 discover_hosts'"
+      metadata_settings:
+        get_attr: [NovaApiBase, role_data, metadata_settings]
       host_prep_tasks:
         - name: create persistent logs directory
           file:

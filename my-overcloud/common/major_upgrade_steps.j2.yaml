@@ -18,6 +18,7 @@ parameters:
     type: json
   UpdateIdentifier:
     type: string
+    default: ''
     description: >
       Setting to a previously unused value during stack-update will trigger
       the Upgrade resources to re-run on all roles.
@@ -31,7 +32,7 @@ parameters:
     default: 'regionOne'
     description: Keystone region for endpoint
   NovaPassword:
-    description: The password for the nova service and db account, used by nova-api.
+    description: The password for the nova service and db account
     type: string
     hidden: true
 

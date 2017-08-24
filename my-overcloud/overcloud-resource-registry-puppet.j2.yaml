@@ -1,8 +1,8 @@
 resource_registry:
 
   OS::TripleO::SoftwareDeployment: OS::Heat::StructuredDeployment
-  OS::TripleO::PostDeploySteps: puppet/post.yaml
-  OS::TripleO::PostUpgradeSteps: puppet/post-upgrade.yaml
+  OS::TripleO::PostDeploySteps: common/post.yaml
+  OS::TripleO::PostUpgradeSteps: common/post-upgrade.yaml
   OS::TripleO::AllNodes::SoftwareConfig: puppet/all-nodes-config.yaml
   OS::TripleO::AllNodesDeployment: OS::Heat::StructuredDeployments
   OS::TripleO::Hosts::SoftwareConfig: hosts-config.yaml
@@ -17,7 +17,7 @@ resource_registry:
 
 {% for role in roles %}
   OS::TripleO::{{role.name}}::PreNetworkConfig: OS::Heat::None
-  OS::TripleO::{{role.name}}PostDeploySteps: puppet/post.yaml
+  OS::TripleO::{{role.name}}PostDeploySteps: common/post.yaml
   OS::TripleO::{{role.name}}: puppet/{{role.name.lower()}}-role.yaml
   OS::TripleO::{{role.name}}Config: puppet/{{role.name.lower()}}-config.yaml
   OS::TripleO::Tasks::{{role.name}}PreConfig: OS::Heat::None
@@ -109,6 +109,8 @@ resource_registry:
 
   OS::TripleO::DeployedServerEnvironment: OS::Heat::None
 
+  OS::TripleO::DeploymentSteps: OS::Heat::StructuredDeploymentGroup
+
   # services
   OS::TripleO::Services: common/services.yaml
   OS::TripleO::Services::Apache: puppet/services/apache.yaml
@@ -154,13 +156,16 @@ resource_registry:
   OS::TripleO::Services::NeutronCorePluginML2OVN: puppet/services/neutron-plugin-ml2-ovn.yaml
   OS::TripleO::Services::NeutronCorePluginPlumgrid: puppet/services/neutron-plugin-plumgrid.yaml
   OS::TripleO::Services::NeutronCorePluginNuage: puppet/services/neutron-plugin-nuage.yaml
+  OS::TripleO::Services::NeutronCorePluginML2Nuage: puppet/services/neutron-plugin-ml2-nuage.yaml
   OS::TripleO::Services::NeutronCorePluginNSX: puppet/services/neutron-plugin-nsx.yaml
   OS::TripleO::Services::OVNDBs: OS::Heat::None
+  OS::TripleO::Services::OVNController: OS::Heat::None
 
   OS::TripleO::Services::NeutronCorePluginMidonet: puppet/services/neutron-midonet.yaml
   OS::TripleO::Services::NeutronOvsAgent: puppet/services/neutron-ovs-agent.yaml
   OS::TripleO::Services::NeutronLinuxbridgeAgent: OS::Heat::None
   OS::TripleO::Services::ComputeNeutronOvsAgent: puppet/services/neutron-ovs-agent.yaml
+  OS::TripleO::Services::ComputeNeutronOvsDpdk: OS::Heat::None
   OS::TripleO::Services::Pacemaker: OS::Heat::None
   OS::TripleO::Services::PacemakerRemote: OS::Heat::None
   OS::TripleO::Services::NeutronSriovAgent: OS::Heat::None
@@ -169,10 +174,12 @@ resource_registry:
   OS::TripleO::Services::HAproxy: puppet/services/haproxy.yaml
   OS::TripleO::Services::HAProxyPublicTLS: OS::Heat::None
   OS::TripleO::Services::HAProxyInternalTLS: OS::Heat::None
+  OS::TripleO::Services::Iscsid: puppet/services/iscsid.yaml
   OS::TripleO::Services::Keepalived: puppet/services/keepalived.yaml
   OS::TripleO::Services::Memcached: puppet/services/memcached.yaml
   OS::TripleO::Services::SaharaApi: OS::Heat::None
   OS::TripleO::Services::SaharaEngine: OS::Heat::None
+  OS::TripleO::Services::Tuned: puppet/services/tuned.yaml
   OS::TripleO::Services::Securetty: OS::Heat::None
   OS::TripleO::Services::Sshd: puppet/services/sshd.yaml
   OS::TripleO::Services::Redis: puppet/services/database/redis.yaml
@@ -186,6 +193,7 @@ resource_registry:
   OS::TripleO::Services::NovaVncProxy: puppet/services/nova-vnc-proxy.yaml
   OS::TripleO::Services::NovaCompute: puppet/services/nova-compute.yaml
   OS::TripleO::Services::NovaLibvirt: puppet/services/nova-libvirt.yaml
+  OS::TripleO::Services::NovaMigrationTarget: puppet/services/nova-migration-target.yaml
   OS::TripleO::Services::Ntp: puppet/services/time/ntp.yaml
   OS::TripleO::Services::SwiftProxy: puppet/services/swift-proxy.yaml
   OS::TripleO::Services::ExternalSwiftProxy: OS::Heat::None
@@ -257,6 +265,7 @@ resource_registry:
   OS::TripleO::Services::CinderBackendDellSc: OS::Heat::None
   OS::TripleO::Services::CinderBackendNetApp: OS::Heat::None
   OS::TripleO::Services::CinderBackendScaleIO: OS::Heat::None
+  OS::TripleO::Services::CinderBackendVRTSHyperScale: OS::Heat::None
   OS::TripleO::Services::CinderHPELeftHandISCSI: OS::Heat::None
   OS::TripleO::Services::Etcd: OS::Heat::None
   OS::TripleO::Services::Ec2Api: OS::Heat::None
@@ -272,6 +281,7 @@ resource_registry:
   OS::TripleO::Services::CertmongerUser: OS::Heat::None
   OS::TripleO::Services::Iscsid: OS::Heat::None
   OS::TripleO::Services::Clustercheck: OS::Heat::None
+  OS::TripleO::Services::VRTSHyperScale: OS::Heat::None
 
 parameter_defaults:
   EnablePackageInstall: false

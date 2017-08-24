@@ -109,6 +109,7 @@
     - OS::TripleO::Services::CinderHPELeftHandISCSI
     - OS::TripleO::Services::Etcd
     - OS::TripleO::Services::AuditD
+    - OS::TripleO::Services::Iscsid
 
 - name: Compute
   CountDefault: 1
@@ -125,6 +126,7 @@
     - OS::TripleO::Services::Sshd
     - OS::TripleO::Services::NovaCompute
     - OS::TripleO::Services::NovaLibvirt
+    - OS::TripleO::Services::NovaMigrationTarget
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::ComputeNeutronCorePlugin
     - OS::TripleO::Services::ComputeNeutronOvsAgent
@@ -138,6 +140,7 @@
     - OS::TripleO::Services::SensuClient
     - OS::TripleO::Services::FluentdClient
     - OS::TripleO::Services::AuditD
+    - OS::TripleO::Services::Iscsid
 
 - name: BlockStorage
   ServicesDefault:
@@ -205,6 +208,7 @@
     - OS::TripleO::Services::TripleoPackages
     - OS::TripleO::Services::SensuClient
     - OS::TripleO::Services::FluentdClient
+    - OS::TripleO::Services::Iscsid
 
 - name: ContrailAnalytics
   ServicesDefault:
@@ -233,6 +237,19 @@
     - OS::TripleO::Services::FluentdClient
 
 - name: ContrailTsn
+  ServicesDefault:
+    - OS::TripleO::Services::CACerts
+    - OS::TripleO::Services::CertmongerUser
+    - OS::TripleO::Services::ContrailTsn
+    - OS::TripleO::Services::Kernel
+    - OS::TripleO::Services::Ntp
+    - OS::TripleO::Services::Timezone
+    - OS::TripleO::Services::Snmp
+    - OS::TripleO::Services::TripleoPackages
+    - OS::TripleO::Services::SensuClient
+    - OS::TripleO::Services::FluentdClient
+
+- name: ContrailDpdk
   ServicesDefault:
     - OS::TripleO::Services::CACerts
     - OS::TripleO::Services::CertmongerUser

@@ -95,6 +95,7 @@ Example
   BlockStorage
   CephStorage
   Compute
+  ComputeOvsDpdk
   Controller
   ControllerOpenstack
   Database
@@ -151,12 +152,14 @@ Example
    * OS::TripleO::Services::ComputeNeutronOvsAgent
    * OS::TripleO::Services::Docker
    * OS::TripleO::Services::FluentdClient
+   * OS::TripleO::Services::Iscsid
    * OS::TripleO::Services::Kernel
    * OS::TripleO::Services::MySQLClient
    * OS::TripleO::Services::NeutronSriovAgent
    * OS::TripleO::Services::NeutronVppAgent
    * OS::TripleO::Services::NovaCompute
    * OS::TripleO::Services::NovaLibvirt
+   * OS::TripleO::Services::NovaMigrationTarget
    * OS::TripleO::Services::Ntp
    * OS::TripleO::Services::OpenDaylightOvs
    * OS::TripleO::Services::Securetty

@@ -46,8 +46,8 @@ parameters:
   CloudNameCtlplane:
     default: overcloud.ctlplane.localdomain
     description: >
-      The DNS name of this cloud's storage management endpoint. E.g.
-      'ci-overcloud.management.tripleo.org'.
+      The DNS name of this cloud's provisioning network endpoint. E.g.
+      'ci-overcloud.ctlplane.tripleo.org'.
     type: string
   ControlFixedIPs:
     default: []
@@ -89,7 +89,7 @@ parameters:
     description: Neutron ID or name for ctlplane network.
   NeutronPublicInterface:
     default: nic1
-    description: What interface to bridge onto br-ex for network nodes.
+    description: Which interface to add to the NeutronPhysicalBridge.
     type: string
   PublicVirtualFixedIPs:
     default: []
@@ -186,11 +186,12 @@ parameters:
 
 {% if role.name != 'Compute' %}
   {{role.name}}SchedulerHints:
+    description: Optional scheduler hints to pass to nova
 {% else %}
   NovaComputeSchedulerHints:
+    description: DEPRECATED - use ComputeSchedulerHints instead
 {% endif %}
     type: json
-    description: Optional scheduler hints to pass to nova
     default: {}
 
   {{role.name}}Parameters:
@@ -223,13 +224,6 @@ parameters:
     type: comma_delimited_list
     description: >
       List of server hostnames to blacklist from any triggered deployments.
-
-parameter_groups:
-- label: deprecated
-  description: Do not use deprecated params, they will be removed.
-  parameters:
-  - controllerExtraConfig
-  - NovaComputeExtraConfig
 
 conditions:
   add_vips_to_etc_hosts: {equals : [{get_param: AddVipsToEtcHosts}, True]}
@@ -935,6 +929,9 @@ outputs:
         - {get_attr: [{{role.name}}ServiceChainRoleData, value]}
         - {get_attr: [{{role.name}}MergedConfigSettings, value]}
 {% endfor %}
+  RoleConfig:
+    description: The configuration workflows associated with each role
+    value: {get_attr: [AllNodesDeploySteps, RoleConfig]}
   RoleNetIpMap:
     description: Mapping of each network to a list of IPs for each role
     value:

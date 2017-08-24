@@ -211,11 +211,11 @@ def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volume
         sync
 
         FACTER_hostname=$HOSTNAME FACTER_uuid=docker /usr/bin/puppet apply \
-        --color=false --logdest syslog $TAGS /etc/config.pp
+        --color=false --logdest syslog --logdest console $TAGS /etc/config.pp
 
         # Disables archiving
         if [ -z "$NO_ARCHIVE" ]; then
-            archivedirs=("/etc" "/root" "/opt" "/var/lib/ironic/tftpboot" "/var/lib/ironic/httpboot" "/var/www" "/var/spool/cron")
+            archivedirs=("/etc" "/root" "/opt" "/var/lib/ironic/tftpboot" "/var/lib/ironic/httpboot" "/var/www" "/var/spool/cron" "/var/lib/nova/.ssh")
             rsync_srcs=""
             for d in "${archivedirs[@]}"; do
                 if [ -d "$d" ]; then

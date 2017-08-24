@@ -60,6 +60,7 @@ parameter_defaults:
     - OS::TripleO::Services::Timezone
     - OS::TripleO::Services::NovaCompute
     - OS::TripleO::Services::NovaLibvirt
+    - OS::TripleO::Services::NovaMigrationTarget
     - OS::TripleO::Services::MongoDb
     - OS::TripleO::Services::Redis
     - OS::TripleO::Services::AodhApi
@@ -87,6 +88,7 @@ parameter_defaults:
     - OS::TripleO::Services::TripleoFirewall
     - OS::TripleO::Services::FluentdClient
     - OS::TripleO::Services::SensuClient
+    - OS::TripleO::Services::Iscsid
 
   ControllerExtraConfig:
     nova::compute::libvirt::services::libvirt_virt_type: qemu

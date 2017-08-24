@@ -32,6 +32,9 @@ parameters:
     type: string
     hidden: true
     default: ''
+  MysqlClustercheckPassword:
+    type: string
+    hidden: true
   RoleName:
     default: ''
     description: Role name on which the service is applied
@@ -40,6 +43,14 @@ parameters:
     default: {}
     description: Parameters specific to the role
     type: json
+  EnableInternalTLS:
+    type: boolean
+    default: false
+  InternalTLSCAFile:
+    default: '/etc/ipa/ca.crt'
+    type: string
+    description: Specifies the default CA cert to use if TLS is used for
+                 services in the internal network.
 
 resources:
 
@@ -56,6 +67,10 @@ resources:
       RoleName: {get_param: RoleName}
       RoleParameters: {get_param: RoleParameters}
 
+conditions:
+
+  internal_tls_enabled: {equals: [{get_param: EnableInternalTLS}, true]}
+
 outputs:
   role_data:
     description: Containerized service MySQL using composable services.
@@ -65,6 +80,24 @@ outputs:
         map_merge:
           - {get_attr: [MysqlPuppetBase, role_data, config_settings]}
           - tripleo::profile::pacemaker::database::mysql_bundle::mysql_docker_image: &mysql_image {get_param: DockerMysqlImage}
+            tripleo::profile::pacemaker::database::mysql_bundle::control_port: 3123
+            tripleo.mysql.firewall_rules:
+              '104 mysql galera-bundle':
+                dport:
+                  - 873
+                  - 3123
+                  - 3306
+                  - 4444
+                  - 4567
+                  - 4568
+                  - 9200
+          -
+            if:
+            - internal_tls_enabled
+            -
+              tripleo::profile::pacemaker::database::mysql_bundle::ca_file:
+                get_param: InternalTLSCAFile
+            - {}
       step_config: ""
       # BEGIN DOCKER SETTINGS #
       puppet_config:
@@ -89,6 +122,20 @@ outputs:
               dest: "/"
               merge: true
               preserve_properties: true
+            - source: "/var/lib/kolla/config_files/src-tls/*"
+              dest: "/"
+              merge: true
+              optional: true
+              preserve_properties: true
+          permissions:
+            - path: /etc/pki/tls/certs/mysql.crt
+              owner: mysql:mysql
+              perm: '0600'
+              optional: true
+            - path: /etc/pki/tls/private/mysql.key
+              owner: mysql:mysql
+              perm: '0600'
+              optional: true
       docker_config:
         step_1:
           mysql_data_ownership:
@@ -107,7 +154,19 @@ outputs:
             image: *mysql_image
             net: host
             # Kolla bootstraps aren't idempotent, explicitly checking if bootstrap was done
-            command: ['bash', '-c', 'test -e /var/lib/mysql/mysql || kolla_start']
+            command:
+              - 'bash'
+              - '-ec'
+              -
+                list_join:
+                  - "\n"
+                  - - 'if [ -e /var/lib/mysql/mysql ]; then exit 0; fi'
+                    - 'kolla_start'
+                    - 'mysqld_safe --skip-networking --wsrep-on=OFF &'
+                    - 'timeout ${DB_MAX_TIMEOUT} /bin/bash -c ''until mysqladmin -uroot -p"${DB_ROOT_PASSWORD}" ping 2>/dev/null; do sleep 1; done'''
+                    - 'mysql -uroot -p"${DB_ROOT_PASSWORD}" -e "CREATE USER ''clustercheck''@''localhost'' IDENTIFIED BY ''${DB_CLUSTERCHECK_PASSWORD}'';"'
+                    - 'mysql -uroot -p"${DB_ROOT_PASSWORD}" -e "GRANT PROCESS ON *.* TO ''clustercheck''@''localhost'' WITH GRANT OPTION;"'
+                    - 'timeout ${DB_MAX_TIMEOUT} mysqladmin -uroot -p"${DB_ROOT_PASSWORD}" shutdown'
             volumes: &mysql_volumes
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
@@ -120,6 +179,12 @@ outputs:
               - KOLLA_BOOTSTRAP=True
               # NOTE(mandre) skip wsrep cluster status check
               - KOLLA_KUBERNETES=True
+              - DB_MAX_TIMEOUT=60
+              -
+                list_join:
+                  - '='
+                  - - 'DB_CLUSTERCHECK_PASSWORD'
+                    - {get_param: MysqlClustercheckPassword}
               -
                 list_join:
                   - '='
@@ -163,7 +228,30 @@ outputs:
           file:
             path: /var/lib/mysql
             state: directory
+      metadata_settings:
+        get_attr: [MysqlPuppetBase, role_data, metadata_settings]
       upgrade_tasks:
-        - name: Stop and disable mysql service
+        - name: get bootstrap nodeid
+          tags: common
+          command: hiera -c /etc/puppet/hiera.yaml bootstrap_nodeid
+          register: bootstrap_node
+        - name: set is_bootstrap_node fact
+          tags: common
+          set_fact: is_bootstrap_node={{bootstrap_node.stdout|lower == ansible_hostname|lower}}
+        - name: Disable the galera cluster resource
           tags: step2
-          service: name=mariadb state=stopped enabled=no
+          pacemaker_resource:
+            resource: galera
+            state: disable
+            wait_for_resource: true
+          when: is_bootstrap_node
+        - name: Delete the stopped galera cluster resource.
+          tags: step2
+          pacemaker_resource:
+            resource: galera
+            state: delete
+            wait_for_resource: true
+          when: is_bootstrap_node
+        - name: Disable mysql service
+          tags: step2
+          service: name=mariadb enabled=no

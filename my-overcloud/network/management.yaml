@@ -39,7 +39,7 @@ parameters:
     description: Ip allocation pool range for the management network.
     type: json
   ManagementInterfaceDefaultRoute:
-    default: null
+    default: unset
     description: The default route of the management network.
     type: string
 
@@ -67,4 +67,4 @@ outputs:
     description: Neutron management network
     value: {get_resource: ManagementNetwork}
   subnet_cidr:
-    value: {get_attr: ManagementSubnet, cidr}
+    value: {get_attr: [ManagementSubnet, cidr]}

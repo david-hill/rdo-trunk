@@ -10,6 +10,7 @@
 {%- set primary_role_name = primary_role[0].name -%}
 # primary role is: {{primary_role_name}}
 {% set deploy_steps_max = 6 -%}
+{% set update_steps_max = 6 -%}
 
 heat_template_version: pike
 
@@ -60,23 +61,6 @@ conditions:
 
 resources:
 
-  # These utility tasks use docker-puppet.py to execute tasks via puppet
-  # We only execute these on the first node in the primary role
-  {{primary_role_name}}DockerPuppetTasks:
-    type: OS::Heat::Value
-    properties:
-      type: json
-      value:
-        yaql:
-          expression:
-            $.data.default_tasks + dict($.data.docker_puppet_tasks.where($1 != null).selectMany($.items()).groupBy($[0], $[1]))
-          data:
-            docker_puppet_tasks: {get_param: [role_data, {{primary_role_name}}, docker_puppet_tasks]}
-            default_tasks:
-{%- for step in range(1, deploy_steps_max) %}
-              step_{{step}}: {}
-{%- endfor %}
-
   RoleConfig:
     type: OS::Heat::SoftwareConfig
     properties:
@@ -89,7 +73,15 @@ resources:
         - name: update_identifier
         - name: bootstrap_server_id
         - name: docker_puppet_debug
-      config: {get_file: deploy-steps-playbook.yaml}
+      config:
+        str_replace:
+          template: |
+            - hosts: localhost
+              connection: local
+              tasks:
+              _TASKS
+          params:
+            _TASKS: {get_file: deploy-steps-tasks.yaml}
 
 {%- for step in range(1, deploy_steps_max) %}
 # BEGIN service_workflow_tasks handling
@@ -133,6 +125,7 @@ resources:
                 {%- for r in roles %}
                 {{r.name}}: {get_param: [role_data, {{r.name}}, merged_config_settings]}
                 {%- endfor %}
+            evaluate_env: false
         UPDATE:
           workflow: { get_resource: WorkflowTasks_Step{{step}} }
           params:
@@ -142,6 +135,7 @@ resources:
                 {%- for r in roles %}
                 {{r.name}}: {get_param: [role_data, {{r.name}}, merged_config_settings]}
                 {%- endfor %}
+            evaluate_env: false
       always_update: true
 # END service_workflow_tasks handling
 {% endfor %}
@@ -174,12 +168,12 @@ resources:
                 connection: local
                 vars:
                   puppet_config: {get_param: [role_data, {{role.name}}, puppet_config]}
-                  docker_puppet_script: {get_file: docker-puppet.py}
-                  docker_puppet_tasks: {get_attr: [{{primary_role_name}}DockerPuppetTasks, value]}
-                  docker_startup_configs: {get_attr: [{{role.name}}DockerConfig, value]}
+                  docker_puppet_script: {get_file: ../docker/docker-puppet.py}
+                  docker_puppet_tasks: {get_param: [role_data, {{role.name}}, docker_puppet_tasks]}
+                  docker_startup_configs: {get_param: [role_data, {{role.name}}, docker_config]}
                   kolla_config: {get_param: [role_data, {{role.name}}, kolla_config]}
                   bootstrap_server_id: {get_param: [servers, {{primary_role_name}}, '0']}
-                  puppet_step_config: {get_attr: [{{role.name}}PuppetStepConfig, value]}
+                  puppet_step_config: {get_param: [role_data, {{role.name}}, step_config]}
                 tasks:
                   # Join host_prep_tasks with the other per-host configuration
                   yaql:
@@ -193,10 +187,9 @@ resources:
                           file: path=/var/lib/tripleo-config state=directory
                         - name: Write the puppet step_config manifest
                           copy: content="{{puppet_step_config}}" dest=/var/lib/tripleo-config/puppet_step_config.pp force=yes
-                        # This is the docker-puppet configs end in
+                        # this creates a JSON config file for our docker-puppet.py script
                         - name: Create /var/lib/docker-puppet
                           file: path=/var/lib/docker-puppet state=directory
-                        # this creates a JSON config file for our docker-puppet.py script
                         - name: Write docker-puppet-tasks json files
                           copy: content="{{puppet_config | to_json}}" dest=/var/lib/docker-puppet/docker-puppet.json force=yes
                         # FIXME: can we move docker-puppet somewhere so it's installed via a package?
@@ -220,6 +213,13 @@ resources:
                         ########################################################
                         # Bootstrap tasks, only performed on bootstrap_server_id
                         ########################################################
+                        - name: Clean /var/lib/docker-puppet/docker-puppet-tasks*.json files
+                          file:
+                            path: "{{item}}"
+                            state: absent
+                          with_fileglob:
+                            - /var/lib/docker-puppet/docker-puppet-tasks*.json
+                          when: deploy_server_id == bootstrap_server_id
                         - name: Write docker-puppet-tasks json files
                           copy: content="{{item.value|to_json}}" dest=/var/lib/docker-puppet/docker-puppet-tasks{{item.key.replace("step_", "")}}.json force=yes
                           with_dict: "{{docker_puppet_tasks}}"
@@ -231,33 +231,6 @@ resources:
     properties:
       servers: {get_param: [servers, {{role.name}}]}
       config: {get_resource: {{role.name}}HostPrepConfig}
-
-  {{role.name}}PuppetStepConfig:
-    type: OS::Heat::Value
-    properties:
-      type: string
-      value:
-        yaql:
-          expression:
-            # select 'step_config' only from services that do not have a docker_config
-            $.data.service_names.zip($.data.step_config, $.data.docker_config).where($[2] = null).where($[1] != null).select($[1]).join("\n")
-          data:
-            service_names: {get_param: [role_data, {{role.name}}, service_names]}
-            step_config: {get_param: [role_data, {{role.name}}, step_config]}
-            docker_config: {get_param: [role_data, {{role.name}}, docker_config]}
-
-  {{role.name}}DockerConfig:
-    type: OS::Heat::Value
-    properties:
-      type: json
-      value:
-        yaql:
-          expression:
-            # select 'docker_config' only from services that have it
-            $.data.service_names.zip($.data.docker_config).where($[1] != null).select($[1]).reduce($1.mergeWith($2), {})
-          data:
-            service_names: {get_param: [role_data, {{role.name}}, service_names]}
-            docker_config: {get_param: [role_data, {{role.name}}, docker_config]}
 
   # BEGIN CONFIG STEPS
 
@@ -271,7 +244,7 @@ resources:
 
   {% for step in range(1, deploy_steps_max) %}
   {{role.name}}Deployment_Step{{step}}:
-    type: OS::Heat::StructuredDeploymentGroup
+    type: OS::TripleO::DeploymentSteps
     depends_on:
       - WorkflowTasks_Step{{step}}_Execution
     # TODO(gfidente): the following if/else condition
@@ -330,3 +303,38 @@ resources:
 
 
 {% endfor %}
+
+outputs:
+  RoleConfig:
+    description: Mapping of config data for all roles
+    value:
+      deploy_steps_tasks: {get_file: deploy-steps-tasks.yaml}
+      deploy_steps_playbook: |
+        - hosts: overcloud
+          tasks:
+{%- for role in roles %}
+            - include: {{role.name}}/host_prep_tasks.yaml
+              when: role_name == '{{role.name}}'
+{%- endfor %}
+            - include: deploy_steps_tasks.yaml
+              with_sequence: count={{deploy_steps_max-1}}
+              loop_control:
+                loop_var: step
+      update_steps_tasks: |
+{%- for role in roles %}
+            - include: {{role.name}}/update_tasks.yaml
+              when: role_name == '{{role.name}}'
+{%- endfor %}
+      update_steps_playbook: |
+        - hosts: overcloud
+          serial: 1
+          tasks:
+            - include: update_steps_tasks.yaml
+              with_sequence: count={{update_steps_max-1}}
+              loop_control:
+                loop_var: step
+            - include: deploy_steps_tasks.yaml
+              with_sequence: count={{deploy_steps_max-1}}
+              loop_control:
+                loop_var: step
+

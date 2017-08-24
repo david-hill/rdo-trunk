@@ -42,6 +42,9 @@ resources:
   ContainersCommon:
     type: ./containers-common.yaml
 
+  MySQLClient:
+    type: ../../puppet/services/database/mysql-client.yaml
+
   NovaIronicBase:
     type: ../../puppet/services/nova-ironic.yaml
     properties:
@@ -59,7 +62,10 @@ outputs:
       service_name: {get_attr: [NovaIronicBase, role_data, service_name]}
       config_settings: {get_attr: [NovaIronicBase, role_data, config_settings]}
       step_config: &step_config
-        get_attr: [NovaIronicBase, role_data, step_config]
+        list_join:
+          - "\n"
+          - - {get_attr: [NovaIronicBase, role_data, step_config]}
+            - {get_attr: [MySQLClient, role_data, step_config]}
       puppet_config:
         config_volume: nova
         puppet_tags: nova_config,nova_paste_api_ini
@@ -70,6 +76,10 @@ outputs:
           command: /usr/bin/nova-compute --config-file /etc/nova/nova.conf --config-file /etc/nova/rootwrap.conf
           config_files:
             - source: "/var/lib/kolla/config_files/src/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
+            - source: "/var/lib/kolla/config_files/src-iscsid/*"
               dest: "/"
               merge: true
               preserve_properties: true
@@ -94,9 +104,9 @@ outputs:
                 -
                   - /var/lib/kolla/config_files/nova_ironic.json:/var/lib/kolla/config_files/config.json:ro
                   - /var/lib/config-data/puppet-generated/nova/:/var/lib/kolla/config_files/src:ro
+                  - /var/lib/config-data/puppet-generated/iscsid/:/var/lib/kolla/config_files/src-iscsid:ro
                   - /run:/run
                   - /dev:/dev
-                  - /etc/iscsi:/etc/iscsi
                   - /var/lib/nova/:/var/lib/nova
                   - /var/log/containers/nova:/var/log/nova
             environment:

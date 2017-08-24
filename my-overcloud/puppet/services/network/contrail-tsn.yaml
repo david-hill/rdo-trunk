@@ -31,17 +31,18 @@ parameters:
                  via parameter_defaults in the resource registry.
     type: json
   NeutronMetadataProxySharedSecret:
-    description: Metadata Secret
+    description: Shared secret to prevent spoofing
     type: string
-  VrouterPhysicalInterface:
+    hidden: true
+  ContrailVrouterPhysicalInterface:
     default: 'eth0'
     description: vRouter physical interface
     type: string
-  VrouterGateway:
+  ContrailVrouterGateway:
     default: '192.168.24.1'
     description: vRouter default gateway
     type: string
-  VrouterNetmask:
+  ContrailVrouterNetmask:
     default: '255.255.255.0'
     description: vRouter netmask
     type: string
@@ -65,10 +66,10 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [ContrailBase, role_data, config_settings]
-          - contrail::vrouter::host_ip: {get_param: [ServiceNetMap, NeutronCorePluginOpencontrailNetwork]}
-            contrail::vrouter::physical_interface: {get_param: VrouterPhysicalInterface}
-            contrail::vrouter::gateway: {get_param: VrouterGateway}
-            contrail::vrouter::netmask: {get_param: VrouterNetmask}
+          - contrail::vrouter::host_ip: {get_param: [ServiceNetMap, ContrailVrouterNetwork]}
+            contrail::vrouter::physical_interface: {get_param: ContrailVrouterPhysicalInterface}
+            contrail::vrouter::gateway: {get_param: ContrailVrouterGateway}
+            contrail::vrouter::netmask: {get_param: ContrailVrouterNetmask}
             contrail::vrouter::metadata_proxy_shared_secret: {get_param: NeutronMetadataProxySharedSecret}
             contrail::vrouter::is_tsn: 'true'
             tripleo.neutron_compute_plugin_opencontrail.firewall_rules:

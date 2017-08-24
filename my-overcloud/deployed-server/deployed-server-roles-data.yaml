@@ -41,6 +41,7 @@
     - OS::TripleO::Services::HeatApiCfn
     - OS::TripleO::Services::HeatApiCloudwatch
     - OS::TripleO::Services::HeatEngine
+    - OS::TripleO::Services::Iscsid
     - OS::TripleO::Services::MySQL
     - OS::TripleO::Services::MySQLClient
     - OS::TripleO::Services::NeutronDhcpAgent
@@ -118,6 +119,7 @@
     - OS::TripleO::Services::Snmp
     - OS::TripleO::Services::NovaCompute
     - OS::TripleO::Services::NovaLibvirt
+    - OS::TripleO::Services::NovaMigrationTarget
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::ComputeNeutronCorePlugin
     - OS::TripleO::Services::ComputeNeutronOvsAgent
@@ -130,6 +132,7 @@
     - OS::TripleO::Services::OpenDaylightOvs
     - OS::TripleO::Services::SensuClient
     - OS::TripleO::Services::FluentdClient
+    - OS::TripleO::Services::Iscsid
 
 - name: BlockStorageDeployedServer
   disable_constraints: True

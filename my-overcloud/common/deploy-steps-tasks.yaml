@@ -1,6 +1,6 @@
-- hosts: localhost
-  connection: local
-  tasks:
+    # Note the indentation here is required as it's joined
+    # to create a playbook in deploy-steps.j2
+   
     #####################################################
     # Per step puppet configuration of the baremetal host
     #####################################################
@@ -10,7 +10,7 @@
       command: >-
         puppet apply
         --modulepath=/etc/puppet/modules:/opt/stack/puppet-modules:/usr/share/openstack-puppet/modules
-        --logdest syslog --color=false
+        --logdest syslog --logdest console --color=false
         /var/lib/tripleo-config/puppet_step_config.pp
       changed_when: false
       check_mode: no
@@ -27,7 +27,7 @@
       shell: python /var/lib/docker-puppet/docker-puppet.py
       environment:
         NET_HOST: 'true'
-        DEBUG: '{{docker_puppet_debug}}'
+        DEBUG: '{{docker_puppet_debug|default(false)}}'
       when: step == "1"
       changed_when: false
       check_mode: no
@@ -64,6 +64,10 @@
     ########################################################
     # Bootstrap tasks, only performed on bootstrap_server_id
     ########################################################
+    - name: Check if /var/lib/docker-puppet/docker-puppet-tasks{{step}}.json exists
+      stat:
+        path: /var/lib/docker-puppet/docker-puppet-tasks{{step}}.json
+      register: docker_puppet_tasks_json
     - name: Run docker-puppet tasks (bootstrap tasks)
       shell: python /var/lib/docker-puppet/docker-puppet.py
       environment:
@@ -71,7 +75,7 @@
         NET_HOST: "true"
         NO_ARCHIVE: "true"
         STEP: "{{step}}"
-      when: deploy_server_id == bootstrap_server_id
+      when: deploy_server_id == bootstrap_server_id and docker_puppet_tasks_json.stat.exists
       changed_when: false
       check_mode: no
       register: outputs
