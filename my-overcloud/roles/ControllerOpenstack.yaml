@@ -33,6 +33,7 @@
     - OS::TripleO::Services::CephMon
     - OS::TripleO::Services::CephRbdMirror
     - OS::TripleO::Services::CephRgw
+    - OS::TripleO::Services::CertmongerUser
     - OS::TripleO::Services::CinderApi
     - OS::TripleO::Services::CinderBackup
     - OS::TripleO::Services::CinderHPELeftHandISCSI
@@ -79,6 +80,7 @@
     - OS::TripleO::Services::NovaScheduler
     - OS::TripleO::Services::NovaVncProxy
     - OS::TripleO::Services::Ntp
+    - OS::TripleO::Services::ContainersLogrotateCrond
     - OS::TripleO::Services::OctaviaApi
     - OS::TripleO::Services::OctaviaHealthManager
     - OS::TripleO::Services::OctaviaHousekeeping

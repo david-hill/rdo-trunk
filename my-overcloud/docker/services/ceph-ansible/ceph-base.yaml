@@ -30,6 +30,14 @@ parameters:
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
     type: json
+  StackUpdateType:
+    type: string
+    description: >
+      Type of update, to differentiate between UPGRADE and UPDATE cases
+      when StackAction is UPDATE (both are the same stack action).
+    constraints:
+    - allowed_values: ['', 'UPGRADE']
+    default: ''
   CephAnsibleWorkflowName:
     type: string
     description: Name of the Mistral workflow to execute
@@ -38,10 +46,18 @@ parameters:
     type: string
     description: Path to the ceph-ansible playbook to execute
     default: /usr/share/ceph-ansible/site-docker.yml.sample
+  CephAnsibleUpgradePlaybook:
+    type: string
+    description: Path to the ceph-ansible playbook to execute on upgrade
+    default: /usr/share/ceph-ansible/infrastructure-playbooks/take-over-existing-cluster.yml
   CephAnsibleExtraConfig:
     type: json
     description: Extra vars for the ceph-ansible playbook
     default: {}
+  CephAnsibleSkipTags:
+    type: string
+    description: List of ceph-ansible tags to skip
+    default: 'package-install,with_pkg'
   CephClusterFSID:
     type: string
     description: The Ceph cluster FSID. Must be a UUID.
@@ -78,7 +94,7 @@ parameters:
     default: vms
     type: string
   CephClientKey:
-    description: The Ceph client key. Can be created with ceph-authtool --gen-print-key. Currently only used for external Ceph deployments to create the openstack user keyring.
+    description: The Ceph client key. Can be created with ceph-authtool --gen-print-key.
     type: string
     hidden: true
   CephClientUserName:
@@ -88,6 +104,14 @@ parameters:
     description: default minimum replication for RBD copies
     type: number
     default: 3
+  ManilaCephFSNativeCephFSAuthId:
+    default: manila
+    type: string
+  CephManilaClientKey:
+    default: ''
+    description: The Ceph client key. Can be created with ceph-authtool --gen-print-key.
+    type: string
+    hidden: true
   CephIPv6:
     default: False
     type: boolean
@@ -101,6 +125,35 @@ conditions:
     yaql:
       data: {get_param: DockerCephDaemonImage}
       expression: $.data.split('/')[0].matches('(\.|:)')
+  perform_upgrade:
+    equals: [{get_param: StackUpdateType}, 'UPGRADE']
+
+resources:
+  DockerImageUrlParts:
+    type: OS::Heat::Value
+    properties:
+      type: json
+      value:
+        host:
+          if:
+          - custom_registry_host
+          - yaql:
+              expression: let(location => $.data.rightSplit(':', 1)[0]) -> regex('(?:https?://)?(.*)/').split($location)[1]
+              data: {get_param: DockerCephDaemonImage}
+          - docker.io
+        image:
+          if:
+          - custom_registry_host
+          - yaql:
+              expression: let(location => $.data.rightSplit(':', 1)[0]) -> regex('(?:https?://)?(.*)/').split($location)[2]
+              data: {get_param: DockerCephDaemonImage}
+          - yaql:
+              expression: $.data.rightSplit(':', 1)[0]
+              data: {get_param: DockerCephDaemonImage}
+        image_tag:
+          yaql:
+            expression: $.data.rightSplit(':', 1)[1]
+            data: {get_param: DockerCephDaemonImage}
 
 outputs:
   role_data:
@@ -119,27 +172,21 @@ outputs:
           - name: ceph_base_ansible_workflow
             workflow: { get_param: CephAnsibleWorkflowName }
             input:
+              ansible_skip_tags: {get_param: CephAnsibleSkipTags}
               ceph_ansible_extra_vars: {get_param: CephAnsibleExtraConfig}
-              ceph_ansible_playbook: {get_param: CephAnsiblePlaybook}
+              ceph_ansible_playbook:
+                if:
+                  - perform_upgrade
+                  - {get_param: CephAnsibleUpgradePlaybook}
+                  - {get_param: CephAnsiblePlaybook}
       config_settings:
         ceph_common_ansible_vars:
+          ireallymeanit: 'yes'
           fsid: { get_param: CephClusterFSID }
           docker: true
-          ceph_docker_registry:
-            if:
-            - custom_registry_host
-            - yaql:
-                expression: regex('(?:https?://)?(.*)/').split($.data)[1]
-                data: {str_split: [':', {get_param: DockerCephDaemonImage}, 0]}
-            - docker.io
-          ceph_docker_image:
-            if:
-            - custom_registry_host
-            - yaql:
-                expression: regex('(?:https?://)?(.*)/').split($.data)[2]
-                data: {str_split: [':', {get_param: DockerCephDaemonImage}, 0]}
-            - {str_split: [':', {get_param: DockerCephDaemonImage}, 0]}
-          ceph_docker_image_tag: {str_split: [':', {get_param: DockerCephDaemonImage}, 1]}
+          ceph_docker_registry: {get_attr: [DockerImageUrlParts, value, host]}
+          ceph_docker_image: {get_attr: [DockerImageUrlParts, value, image]}
+          ceph_docker_image_tag: {get_attr: [DockerImageUrlParts, value, image_tag]}
           containerized_deployment: true
           public_network: {get_param: [ServiceData, net_cidr_map, {get_param: [ServiceNetMap, CephMonNetwork]}]}
           monitor_address_block: {get_param: [ServiceData, net_cidr_map, {get_param: [ServiceNetMap, CephMonNetwork]}]}
@@ -186,11 +233,17 @@ outputs:
                  CINDERBACKUP_POOL: {get_param: CinderBackupRbdPoolName}
                  GLANCE_POOL: {get_param: GlanceRbdPoolName}
                  GNOCCHI_POOL: {get_param: GnocchiRbdPoolName}
-            acls:
-            - "u:glance:r--"
-            - "u:nova:r--"
-            - "u:cinder:r--"
-            - "u:gnocchi:r--"
+            mode: "0644"
+          - name:
+              list_join:
+              - '.'
+              - - client
+                - {get_param: ManilaCephFSNativeCephFSAuthId}
+            key: {get_param: CephManilaClientKey}
+            mon_cap: "allow r, allow command auth del, allow command auth caps, allow command auth get, allow command auth get-or-create"
+            mds_cap: "allow *"
+            osd_cap: "allow rw"
+            mode: "0644"
           keys: *openstack_keys
           pools: []
           ceph_conf_overrides:

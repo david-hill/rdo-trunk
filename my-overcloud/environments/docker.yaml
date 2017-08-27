@@ -1,10 +1,4 @@
 resource_registry:
-  # This can be used when you don't want to run puppet on the host,
-  # e.g atomic, but it has been replaced with OS::TripleO::Services::Docker
-  # OS::TripleO::NodeUserData: ../docker/firstboot/setup_docker_host.yaml
-  # The compute node still needs extra initialization steps
-  OS::TripleO::Compute::NodeUserData: ../docker/firstboot/setup_docker_host.yaml
-
   OS::TripleO::Services::Docker: ../puppet/services/docker.yaml
   # Default Neutron ML2 puppet plugin to use when NeutronCorePlugin is set to ML2
   OS::TripleO::Docker::NeutronMl2PluginBase: ../puppet/services/neutron-plugin-ml2.yaml
@@ -22,6 +16,7 @@ resource_registry:
   OS::TripleO::Services::NovaPlacement: ../docker/services/nova-placement.yaml
   OS::TripleO::Services::NovaConductor: ../docker/services/nova-conductor.yaml
   OS::TripleO::Services::NovaConsoleauth: ../docker/services/nova-consoleauth.yaml
+  OS::TripleO::Services::NovaMetadata: ../docker/services/nova-metadata.yaml
   OS::TripleO::Services::NovaMigrationTarget: ../docker/services/nova-migration-target.yaml
   OS::TripleO::Services::NovaScheduler: ../docker/services/nova-scheduler.yaml
   OS::TripleO::Services::NovaVncProxy: ../docker/services/nova-vnc-proxy.yaml
@@ -56,6 +51,7 @@ resource_registry:
   OS::TripleO::Services::Horizon: ../docker/services/horizon.yaml
   OS::TripleO::Services::Iscsid: ../docker/services/iscsid.yaml
   OS::TripleO::Services::Multipathd: ../docker/services/multipathd.yaml
+  OS::TripleO::Services::ContainersLogrotateCrond: ../docker/services/logrotate-crond.yaml
   # FIXME: Had to remove these to unblock containers CI. They should be put back when fixed.
   # OS::TripleO::Services::CinderApi: ../docker/services/cinder-api.yaml
   # OS::TripleO::Services::CinderScheduler: ../docker/services/cinder-scheduler.yaml

@@ -47,6 +47,7 @@
     - OS::TripleO::Services::CinderApi
     - OS::TripleO::Services::CinderBackendDellPs
     - OS::TripleO::Services::CinderBackendDellSc
+    - OS::TripleO::Services::CinderBackendDellEMCUnity
     - OS::TripleO::Services::CinderBackendNetApp
     - OS::TripleO::Services::CinderBackendScaleIO
     - OS::TripleO::Services::CinderBackendVRTSHyperScale
@@ -111,6 +112,7 @@
     - OS::TripleO::Services::NovaScheduler
     - OS::TripleO::Services::NovaVncProxy
     - OS::TripleO::Services::Ntp
+    - OS::TripleO::Services::ContainersLogrotateCrond
     - OS::TripleO::Services::OctaviaApi
     - OS::TripleO::Services::OctaviaHealthManager
     - OS::TripleO::Services::OctaviaHousekeeping
@@ -185,6 +187,7 @@
     - OS::TripleO::Services::NovaLibvirt
     - OS::TripleO::Services::NovaMigrationTarget
     - OS::TripleO::Services::Ntp
+    - OS::TripleO::Services::ContainersLogrotateCrond
     - OS::TripleO::Services::OpenDaylightOvs
     - OS::TripleO::Services::Securetty
     - OS::TripleO::Services::SensuClient
@@ -219,6 +222,7 @@
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::MySQLClient
     - OS::TripleO::Services::Ntp
+    - OS::TripleO::Services::ContainersLogrotateCrond
     - OS::TripleO::Services::Securetty
     - OS::TripleO::Services::SensuClient
     - OS::TripleO::Services::Snmp
@@ -255,6 +259,7 @@
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::MySQLClient
     - OS::TripleO::Services::Ntp
+    - OS::TripleO::Services::ContainersLogrotateCrond
     - OS::TripleO::Services::Securetty
     - OS::TripleO::Services::SensuClient
     - OS::TripleO::Services::Snmp
@@ -285,6 +290,7 @@
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::MySQLClient
     - OS::TripleO::Services::Ntp
+    - OS::TripleO::Services::ContainersLogrotateCrond
     - OS::TripleO::Services::Securetty
     - OS::TripleO::Services::SensuClient
     - OS::TripleO::Services::Snmp
