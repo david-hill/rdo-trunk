@@ -31,9 +31,9 @@ parameters:
                  via parameter_defaults in the resource registry.
     type: json
   Debug:
-    default: ''
+    default: false
     description: Set to True to enable debugging on all services.
-    type: string
+    type: boolean
   GlanceDebug:
     default: ''
     description: Set to True to enable debugging Glance service.
@@ -78,10 +78,10 @@ parameters:
   GlanceBackend:
     default: swift
     description: The short name of the Glance backend to use. Should be one
-      of swift, rbd, or file
+      of swift, rbd, cinder, or file
     type: string
     constraints:
-    - allowed_values: ['swift', 'file', 'rbd']
+    - allowed_values: ['swift', 'file', 'rbd', 'cinder']
   GlanceNfsEnabled:
     default: false
     description: >

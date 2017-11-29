@@ -70,17 +70,14 @@ parameters:
     description: |
       Role specific additional hiera configuration to inject into the cluster.
     type: json
+{%- if role.deprecated_param_extraconfig is defined %}
+  {{role.deprecated_param_extraconfig}}:
+    default: {}
+    description: |
+      DEPRECATED use {{role.name}}ExtraConfig instead
+    type: json
+{%- endif %}
 {%- endfor %}
-  controllerExtraConfig:
-    default: {}
-    description: |
-      DEPRECATED use ControllerExtraConfig instead
-    type: json
-  NovaComputeExtraConfig:
-    default: {}
-    description: |
-      DEPRECATED use ComputeExtraConfig instead
-    type: json
   NeutronControlPlaneID:
     default: 'ctlplane'
     type: string
@@ -188,15 +185,16 @@ parameters:
       doing an update which requires removal of specific resources.
       Example format ComputeRemovalPolicies: [{'resource_list': ['0']}]
 
-{% if role.name != 'Compute' %}
   {{role.name}}SchedulerHints:
-    description: Optional scheduler hints to pass to nova
-{% else %}
-  NovaComputeSchedulerHints:
-    description: DEPRECATED - use ComputeSchedulerHints instead
-{% endif %}
     type: json
+    description: Optional scheduler hints to pass to nova
     default: {}
+{%- if role.deprecated_param_scheduler_hints is defined %}
+  {{role.deprecated_param_scheduler_hints}}:
+    type: json
+    description: DEPRECATED - use {{role.name}}SchedulerHints instead
+    default: {}
+{%- endif %}
 
   {{role.name}}Parameters:
     type: json
@@ -228,6 +226,24 @@ parameters:
     type: comma_delimited_list
     description: >
       List of server hostnames to blacklist from any triggered deployments.
+
+{% for role in roles %}
+{%- if role.deprecated_param_scheduler_hints is defined or role.deprecated_param_extraconfig is defined %}
+{%- if not parameter_groups_defined|default(false) %}
+parameter_groups:
+- label: deprecated
+  description: Do not use deprecated params, they will be removed.
+  parameters:
+{%- set parameter_groups_defined = true %}
+{%- endif %}
+{%- endif %}
+{%- if role.deprecated_param_scheduler_hints is defined %}
+    - {{role.deprecated_param_scheduler_hints}}
+{%- endif %}
+{%- if role.deprecated_param_extraconfig is defined %}
+    - {{role.deprecated_param_extraconfig}}
+{%- endif %}
+{%- endfor %}
 
 conditions:
   add_vips_to_etc_hosts: {equals : [{get_param: AddVipsToEtcHosts}, True]}
@@ -407,17 +423,10 @@ resources:
           map_merge:
           - get_attr: [{{role.name}}ServiceConfigSettings, value]
           - get_param: ExtraConfig
-          {%- if role.name == 'Controller' %}
-          - map_merge:
-            - get_param: controllerExtraConfig
-            - get_param: {{role.name}}ExtraConfig
-          {%- elif role.name == 'Compute' %}
-          - map_merge:
-            - get_param: NovaComputeExtraConfig
-            - get_param: {{role.name}}ExtraConfig
-          {%- else %}
+{%- if role.deprecated_param_extraconfig is defined %}
+          - get_param: {{role.deprecated_param_extraconfig}}
+{%- endif %}
           - get_param: {{role.name}}ExtraConfig
-          {%- endif %}
 
   # Filter any null/None service_names which may be present due to mapping
   # of services to OS::Heat::None
@@ -482,8 +491,12 @@ resources:
     type: OS::TripleO::Network::Ports::NetIpListMap
     properties:
       ControlPlaneIpList: {get_attr: [{{role.name}}, ip_address]}
-{%- for network in networks if network.enabled|default(true) %}
+{%- for network in networks %}
+  {%- if network.enabled|default(true) %}
       {{network.name}}IpList: {get_attr: [{{role.name}}, {{network.name_lower}}_ip_address]}
+  {%- else %}
+      {{network.name}}IpList: {get_attr: [{{role.name}}, ip_address]}
+  {%- endif %}
 {%- endfor %}
       EnabledServices: {get_attr: [{{role.name}}ServiceNames, value]}
       ServiceNetMap: {get_attr: [ServiceNetMap, service_net_map_lower]}
@@ -525,14 +538,19 @@ resources:
               params:
                 '%stackname%': {get_param: 'OS::stack_name'}
           NodeIndex: '%index%'
-  {% if role.name != 'Compute' %}
-          {{role.name}}SchedulerHints: {get_param: {{role.name}}SchedulerHints}
-  {% else %}
-          NovaComputeSchedulerHints: {get_param: NovaComputeSchedulerHints}
-  {% endif %}
+          # Note, SchedulerHints must be defined here, not only in the
+          # nested template, as it can contain %index%
+          {{role.name}}SchedulerHints:
+            map_merge:
+{%- if role.deprecated_param_scheduler_hints is defined %}
+              - {get_param: {{role.deprecated_param_scheduler_hints}}}
+{%- endif %}
+              - {get_param: {{role.name}}SchedulerHints}
           ServiceConfigSettings: {get_attr: [{{role.name}}ServiceConfigSettings, value]}
           ServiceNames: {get_attr: [{{role.name}}ServiceNames, value]}
           MonitoringSubscriptions: {get_attr: [{{role.name}}ServiceChainRoleData, value, monitoring_subscriptions]}
+          LoggingSources: {get_attr: [{{role.name}}ServiceChainRoleData, value, logging_sources]}
+          LoggingGroups: {get_attr: [{{role.name}}ServiceChainRoleData, value, logging_groups]}
           ServiceMetadataSettings: {get_attr: [{{role.name}}ServiceChainRoleData, value, service_metadata_settings]}
           DeploymentServerBlacklistDict: {get_attr: [DeploymentServerBlacklistDict, value]}
           RoleParameters: {get_param: {{role.name}}Parameters}
@@ -623,24 +641,6 @@ resources:
           - ','
 {% for role in roles %}
           - {get_attr: [{{role.name}}ServiceNames, value]}
-{% endfor %}
-      logging_groups:
-        yaql:
-          expression: >
-            $.data.groups.flatten()
-          data:
-            groups:
-{% for role in roles %}
-              - {get_attr: [{{role.name}}ServiceChainRoleData, value, logging_groups]}
-{% endfor %}
-      logging_sources:
-        yaql:
-          expression: >
-            $.data.sources.flatten()
-          data:
-            sources:
-{% for role in roles %}
-              - {get_attr: [{{role.name}}ServiceChainRoleData, value, logging_sources]}
 {% endfor %}
       controller_ips: {get_attr: [{{primary_role_name}}, ip_address]}
       controller_names: {get_attr: [{{primary_role_name}}, hostname]}
@@ -960,6 +960,12 @@ outputs:
 {% for role in roles %}
       {{role.name}}: {get_attr: [{{role.name}}NetworkHostnameMap, value]}
 {% endfor %}
+  RoleTags:
+    description: Tags for each role, as defined in roles_data.yaml
+    value:
+{%- for role in roles %}
+      {{role.name}}: {{role.tags|default([])}}
+{%- endfor %}
   ServerOsCollectConfigData:
     description: The os-collect-config configuration associated with each server resource
     value: {get_attr: [ServerOsCollectConfigData, value]}

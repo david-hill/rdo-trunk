@@ -70,6 +70,8 @@ outputs:
         map_merge:
           - get_attr: [MongodbPuppetBase, role_data, config_settings]
           - mongodb::server::fork: false
+      logging_source: {get_attr: [MongodbPuppetBase, role_data, logging_source]}
+      logging_groups: {get_attr: [MongodbPuppetBase, role_data, logging_groups]}
       step_config: &step_config
         list_join:
           - "\n"
@@ -157,6 +159,11 @@ outputs:
       metadata_settings:
         get_attr: [MongodbPuppetBase, role_data, metadata_settings]
       upgrade_tasks:
+        - name: Check for mongodb service
+          stat: path=/usr/lib/systemd/system/mongod.service
+          tags: common
+          register: mongod_service
         - name: Stop and disable mongodb service
           tags: step2
           service: name=mongod state=stopped enabled=no
+          when: mongod_service.stat.exists

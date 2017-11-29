@@ -58,6 +58,8 @@ outputs:
     value:
       service_name: {get_attr: [MemcachedBase, role_data, service_name]}
       config_settings: {get_attr: [MemcachedBase, role_data, config_settings]}
+      logging_source: {get_attr: [MemcachedBase, role_data, logging_source]}
+      logging_groups: {get_attr: [MemcachedBase, role_data, logging_groups]}
       step_config: &step_config
         get_attr: [MemcachedBase, role_data, step_config]
       service_config_settings: {get_attr: [MemcachedBase, role_data, service_config_settings]}
@@ -78,8 +80,8 @@ outputs:
             user: root
             volumes:
                - /var/lib/config-data/memcached/etc/sysconfig/memcached:/etc/sysconfig/memcached:ro
-               - /var/log/memcached.log:/var/log/memcached.log
-            command: ['/bin/bash', '-c', 'source /etc/sysconfig/memcached; chown ${USER} /var/log/memcached.log']
+               - /var/log/containers/memcached:/var/log/
+            command: ['/bin/bash', '-c', 'source /etc/sysconfig/memcached; touch /var/log/memcached.log && chown ${USER} /var/log/memcached.log']
           memcached:
             start_order: 1
             image: *memcached_image
@@ -91,8 +93,16 @@ outputs:
                 - {get_attr: [ContainersCommon, volumes]}
                 -
                   - /var/lib/config-data/memcached/etc/sysconfig/memcached:/etc/sysconfig/memcached:ro
-            # TODO(bogdando) capture memcached syslog logs from a container
-            command: ['/bin/bash', '-c', 'source /etc/sysconfig/memcached; /usr/bin/memcached -p ${PORT} -u ${USER} -m ${CACHESIZE} -c ${MAXCONN} $OPTIONS']
+                  - /var/log/containers/memcached:/var/log/
+            # NOTE: We're adding the log redirection here, even though should
+            # already be part of the options. This is because the redirection
+            # via the options is not working and ends up being passed as a
+            # parameter to the memcached command (which it silently ignores).
+            # Thus the need for the explicit redirection here. The redirection
+            # will be removed from the $OPTIONS, which is done via the puppet
+            # module, but we'll only be able to do this once the following pull
+            # request merges: https://github.com/saz/puppet-memcached/pull/88
+            command: ['/bin/bash', '-c', 'source /etc/sysconfig/memcached; /usr/bin/memcached -p ${PORT} -u ${USER} -m ${CACHESIZE} -c ${MAXCONN} $OPTIONS >> /var/log/memcached.log 2>&1']
       upgrade_tasks:
         - name: Stop and disable memcached service
           tags: step2

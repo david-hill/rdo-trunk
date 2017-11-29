@@ -5,10 +5,10 @@ resource_registry:
   OS::TripleO::Services::IronicApi: ../docker/services/ironic-api.yaml
   OS::TripleO::Services::IronicConductor: ../docker/services/ironic-conductor.yaml
   OS::TripleO::Services::IronicPxe: ../docker/services/ironic-pxe.yaml
-  OS::TripleO::Services::Docker: OS::Heat::None
 
 parameter_defaults:
   ControllerServices:
+    - OS::TripleO::Services::Clustercheck
     - OS::TripleO::Services::Docker
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::Keystone

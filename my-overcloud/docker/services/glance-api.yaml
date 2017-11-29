@@ -39,16 +39,38 @@ parameters:
   EnableInternalTLS:
     type: boolean
     default: false
+  GlanceBackend:
+    default: swift
+    description: The short name of the Glance backend to use. Should be one
+      of swift, rbd, cinder, or file
+    type: string
+    constraints:
+    - allowed_values: ['swift', 'file', 'rbd', 'cinder']
   GlanceNfsEnabled:
     default: false
     description: >
       When using GlanceBackend 'file', mount NFS share for image storage.
+    type: boolean
+  GlanceNfsShare:
+    default: ''
+    description: >
+      NFS share to mount for image storage (when GlanceNfsEnabled is true)
+    type: string
+  GlanceNfsOptions:
+    default: 'intr,context=system_u:object_r:glance_var_lib_t:s0'
+    description: >
+      NFS mount options for image storage (when GlanceNfsEnabled is true)
+    type: string
+  UpgradeRemoveUnusedPackages:
+    default: false
+    description: Remove package if the service is being disabled during upgrade
     type: boolean
 
 conditions:
 
   internal_tls_enabled: {equals: [{get_param: EnableInternalTLS}, true]}
   nfs_backend_enabled: {equals: [{get_param: GlanceNfsEnabled}, true]}
+  cinder_backend_enabled: {equals: [{get_param: GlanceBackend}, cinder]}
 
 
 resources:
@@ -69,6 +91,9 @@ resources:
       RoleName: {get_param: RoleName}
       RoleParameters: {get_param: RoleParameters}
 
+  GlanceLogging:
+    type: OS::TripleO::Services::Logging::GlanceApi
+
 outputs:
   role_data:
     description: Role data for the Glance API role.
@@ -77,7 +102,10 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [GlanceApiPuppetBase, role_data, config_settings]
+          - get_attr: [GlanceLogging, config_settings]
           - glance::api::sync_db: false
+      logging_source: {get_attr: [GlanceApiPuppetBase, role_data, logging_source]}
+      logging_groups: {get_attr: [GlanceApiPuppetBase, role_data, logging_groups]}
       step_config: &step_config
         list_join:
           - "\n"
@@ -102,6 +130,10 @@ outputs:
               dest: "/etc/ceph/"
               merge: true
               preserve_properties: true
+          permissions:
+            - path: /var/lib/glance
+              owner: glance:glance
+              recurse: true
         /var/lib/kolla/config_files/glance_api_tls_proxy.json:
           command: /usr/sbin/httpd -DFOREGROUND
           config_files:
@@ -110,18 +142,11 @@ outputs:
               merge: true
               preserve_properties: true
       docker_config:
-        # Kolla_bootstrap/db_sync runs before permissions set by kolla_config
         step_2:
-          glance_init_logs:
-            image: &glance_api_image {get_param: DockerGlanceApiImage}
-            privileged: false
-            user: root
-            volumes:
-              - /var/log/containers/glance:/var/log/glance
-            command: ['/bin/bash', '-c', 'chown -R glance:glance /var/log/glance']
+          get_attr: [GlanceLogging, docker_config, step_2]
         step_3:
           glance_api_db_sync:
-            image: *glance_api_image
+            image: &glance_api_image {get_param: DockerGlanceApiImage}
             net: host
             privileged: false
             detach: false
@@ -129,16 +154,22 @@ outputs:
             volumes: &glance_volumes
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
+                - {get_attr: [GlanceLogging, volumes]}
                 -
                   - /var/lib/kolla/config_files/glance_api.json:/var/lib/kolla/config_files/config.json
                   - /var/lib/config-data/puppet-generated/glance_api/:/var/lib/kolla/config_files/src:ro
-                  - /var/log/containers/glance:/var/log/glance
                   - /etc/ceph:/var/lib/kolla/config_files/src-ceph:ro
                   -
                     if:
                       - nfs_backend_enabled
                       - /var/lib/glance:/var/lib/glance
                       - ''
+                -
+                  if:
+                    - cinder_backend_enabled
+                    - - /dev:/dev
+                      - /etc/iscsi:/etc/iscsi
+                    - []
             environment:
               - KOLLA_BOOTSTRAP=True
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
@@ -149,7 +180,7 @@ outputs:
                 start_order: 2
                 image: *glance_api_image
                 net: host
-                privileged: false
+                privileged: {if: [cinder_backend_enabled, true, false]}
                 restart: always
                 volumes: *glance_volumes
                 environment:
@@ -174,17 +205,29 @@ outputs:
                       - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
                 - {}
       host_prep_tasks:
-        - name: create persistent logs directory
-          file:
-            path: /var/log/containers/glance
-            state: directory
-        - name: ensure ceph configurations exist
-          file:
-            path: /etc/ceph
-            state: directory
+        list_concat:
+        - {get_attr: [GlanceLogging, host_prep_tasks]}
+        - - name: Mount NFS on host
+            vars:
+              nfs_backend_enable: {get_param: GlanceNfsEnabled}
+            mount: name=/var/lib/glance src="{{item.NFS_SHARE}}" fstype=nfs4 opts="{{item.NFS_OPTIONS}}" state=mounted
+            with_items:
+              - NFS_SHARE: {get_param: GlanceNfsShare}
+                NFS_OPTIONS: {get_param: GlanceNfsOptions}
+            when:
+              - nfs_backend_enable
+          - name: ensure ceph configurations exist
+            file:
+              path: /etc/ceph
+              state: directory
       upgrade_tasks:
         - name: Stop and disable glance_api service
           tags: step2
           service: name=openstack-glance-api state=stopped enabled=no
+        - name: Remove openstack-glance package if operator requests it
+          yum: name=openstack-glance state=removed
+          tags: step2
+          ignore_errors: True
+          when: {get_param: UpgradeRemoveUnusedPackages}
       metadata_settings:
         get_attr: [GlanceApiPuppetBase, role_data, metadata_settings]

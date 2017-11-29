@@ -60,6 +60,8 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [NeutronBase, role_data, config_settings]
+      logging_source: {get_attr: [NeutronBase, role_data, logging_source]}
+      logging_groups: {get_attr: [NeutronBase, role_data, logging_groups]}
       step_config: &step_config
         get_attr: [NeutronBase, role_data, step_config]
       service_config_settings: {get_attr: [NeutronBase, role_data, service_config_settings]}
@@ -71,7 +73,7 @@ outputs:
         config_image: {get_param: DockerNeutronConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/neutron_dhcp.json:
-          command: /usr/bin/neutron-dhcp-agent --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/dhcp_agent.ini --log-file /var/log/neutron/dhcp-agent.log --config-dir /etc/neutron/conf.d/common --config-dir /etc/neutron/conf.d/neutron-dhcp-agent
+          command: /usr/bin/neutron-dhcp-agent --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/dhcp_agent.ini --config-dir /etc/neutron/conf.d/common --config-dir /etc/neutron/conf.d/neutron-dhcp-agent
           config_files:
             - source: "/var/lib/kolla/config_files/src/*"
               dest: "/"

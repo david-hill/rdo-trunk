@@ -41,6 +41,14 @@ parameters:
     description: Port that dockerized nova migration target sshd service
                  binds to.
     type: number
+  UpgradeLevelNovaCompute:
+    type: string
+    description: Nova Compute upgrade level
+    default: ''
+  UpgradeRemoveUnusedPackages:
+    default: false
+    description: Remove package if the service is being disabled during upgrade
+    type: boolean
 
 resources:
 
@@ -59,7 +67,6 @@ resources:
       DefaultPasswords: {get_param: DefaultPasswords}
       RoleName: {get_param: RoleName}
       RoleParameters: {get_param: RoleParameters}
-      MigrationSshPort: {get_param: DockerNovaMigrationSshdPort}
 
 outputs:
   role_data:
@@ -68,6 +75,8 @@ outputs:
       service_name: {get_attr: [NovaComputeBase, role_data, service_name]}
       config_settings:
         get_attr: [NovaComputeBase, role_data, config_settings]
+      logging_source: {get_attr: [NovaComputeBase, role_data, logging_source]}
+      logging_groups: {get_attr: [NovaComputeBase, role_data, logging_groups]}
       step_config: &step_config
         list_join:
           - "\n"
@@ -106,6 +115,7 @@ outputs:
         step_4:
           nova_compute:
             image: &nova_compute_image {get_param: DockerNovaComputeImage}
+            ipc: host
             net: host
             privileged: true
             user: nova
@@ -142,6 +152,18 @@ outputs:
             path: /etc/ceph
             state: directory
       upgrade_tasks:
+        - name: Set compute upgrade level to auto
+          tags: step1
+          ini_file:
+            str_replace:
+              template: "dest=/etc/nova/nova.conf section=upgrade_levels option=compute value=LEVEL"
+              params:
+                LEVEL: {get_param: UpgradeLevelNovaCompute}
         - name: Stop and disable nova-compute service
           tags: step2
           service: name=openstack-nova-compute state=stopped enabled=no
+        - name: Remove openstack-nova-compute package if operator requests it
+          yum: name=openstack-nova-compute state=removed
+          tags: step2
+          ignore_errors: True
+          when: {get_param: UpgradeRemoveUnusedPackages}

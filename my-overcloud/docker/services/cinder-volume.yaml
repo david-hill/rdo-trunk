@@ -45,6 +45,10 @@ parameters:
     default: 10280
     description: The size of the loopback file used by the cinder LVM driver.
     type: number
+  UpgradeRemoveUnusedPackages:
+    default: false
+    description: Remove package if the service is being disabled during upgrade
+    type: boolean
 
 resources:
 
@@ -73,6 +77,8 @@ outputs:
         map_merge:
           - get_attr: [CinderBase, role_data, config_settings]
           - tripleo::profile::base::lvm::enable_udev: false
+      logging_source: {get_attr: [CinderBase, role_data, logging_source]}
+      logging_groups: {get_attr: [CinderBase, role_data, logging_groups]}
       step_config: &step_config
         list_join:
           - "\n"
@@ -119,6 +125,7 @@ outputs:
         step_4:
           cinder_volume:
             image: *cinder_volume_image
+            ipc: host
             net: host
             privileged: true
             restart: always
@@ -185,3 +192,8 @@ outputs:
         - name: Stop and disable cinder_volume service
           tags: step2
           service: name=openstack-cinder-volume state=stopped enabled=no
+        - name: Remove openstack-cinder package if operator requests it
+          yum: name=openstack-cinder state=removed
+          tags: step2
+          ignore_errors: True
+          when: {get_param: UpgradeRemoveUnusedPackages}

@@ -12,6 +12,8 @@
     - OS::TripleO::Services::CACerts
     - OS::TripleO::Services::CertmongerUser
     - OS::TripleO::Services::Collectd
+    - OS::TripleO::Services::Clustercheck
+    - OS::TripleO::Services::Docker
     - OS::TripleO::Services::FluentdClient
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::MySQL

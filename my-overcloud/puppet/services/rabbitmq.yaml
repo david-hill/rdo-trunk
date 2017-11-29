@@ -41,7 +41,7 @@ parameters:
   RabbitFDLimit:
     default: 65536
     description: Configures RabbitMQ FD limit
-    type: string
+    type: number
   RabbitIPv6:
     default: false
     description: Enable IPv6 in RabbitMQ
@@ -88,7 +88,7 @@ outputs:
                   - 25672
             rabbitmq::delete_guest_user: false
             rabbitmq::wipe_db_on_cookie_change: true
-            rabbitmq::port: '5672'
+            rabbitmq::port: 5672
             rabbitmq::package_provider: yum
             rabbitmq::package_source: undef
             rabbitmq::repos_ensure: false
@@ -103,7 +103,7 @@ outputs:
               inet_dist_listen_min: '25672'
               inet_dist_listen_max: '25672'
             rabbitmq_config_variables:
-              cluster_partition_handling: 'pause_minority'
+              cluster_partition_handling: 'ignore'
               queue_master_locator: '<<"min-masters">>'
               loopback_users: '[]'
             rabbitmq::erlang_cookie:
@@ -122,7 +122,8 @@ outputs:
             rabbitmq::interface: {get_param: [ServiceNetMap, RabbitmqNetwork]}
             rabbitmq::nr_ha_queues: {get_param: RabbitHAQueues}
             rabbitmq::ssl: {get_param: EnableInternalTLS}
-            rabbitmq::ssl_port: '5672'
+            rabbitmq::ssl_erl_dist: {get_param: EnableInternalTLS}
+            rabbitmq::ssl_port: 5672
             rabbitmq::ssl_depth: 1
             rabbitmq::ssl_only: {get_param: EnableInternalTLS}
             rabbitmq::ssl_interface: {get_param: [ServiceNetMap, RabbitmqNetwork]}

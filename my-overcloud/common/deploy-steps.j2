@@ -1,7 +1,15 @@
 # certain initialization steps (run in a container) will occur
 # on the role marked as primary controller or the first role listed
-{%- set primary_role = [roles[0]] -%}
-{%- for role in roles -%}
+{%- if enabled_roles is not defined -%}
+  # On upgrade certain roles can be disabled for operator driven upgrades
+  # See major_upgrade_steps.j2.yaml and post-upgrade.j2.yaml
+  {%- set enabled_roles = roles -%}
+  {%- set is_upgrade = false -%}
+{%- else %}
+  {%- set is_upgrade = true -%}
+{%- endif -%}
+{%- set primary_role = [enabled_roles[0]] -%}
+{%- for role in enabled_roles -%}
   {%- if 'primary' in role.tags and 'controller' in role.tags -%}
     {%- set _ = primary_role.pop() -%}
     {%- set _ = primary_role.append(role) -%}
@@ -40,10 +48,18 @@ parameters:
     description: Mapping of service endpoint -> protocol. Typically set
                  via parameter_defaults in the resource registry.
     type: json
+  ConfigDebug:
+    default: false
+    description: Whether to run config management (e.g. Puppet) in debug mode.
+    type: boolean
   DockerPuppetDebug:
     type: string
     default: ''
     description: Set to True to enable debug logging with docker-puppet.py
+  DockerPuppetProcessCount:
+    type: number
+    default: 3
+    description: Number of concurrent processes to use when running docker-puppet to generate config files.
   ctlplane_service_ips:
     type: json
 
@@ -51,10 +67,10 @@ conditions:
 {% for step in range(1, deploy_steps_max) %}
   WorkflowTasks_Step{{step}}_Enabled:
     or:
-    {%- for role in roles %}
+    {%- for role in enabled_roles %}
       - not:
           equals:
-            - get_param: [role_data, {{role.name}}, service_workflow_tasks, step{{step}}]
+            - get_param: [role_data, {{role.name}}, workflow_tasks, step{{step}}]
             - ''
       - False
     {%- endfor %}
@@ -73,7 +89,9 @@ resources:
         - name: role_name
         - name: update_identifier
         - name: bootstrap_server_id
+        - name: enable_debug
         - name: docker_puppet_debug
+        - name: docker_puppet_process_count
       config:
         str_replace:
           template: |
@@ -84,31 +102,44 @@ resources:
           params:
             _TASKS: {get_file: deploy-steps-tasks.yaml}
 
+  ExternalDeployTasks:
+    type: OS::Heat::Value
+    properties:
+      type: comma_delimited_list
+      value:
+        yaql:
+          # processing from per-role unique tasks into globally unique tasks
+          expression: coalesce($.data, []).flatten().distinct()
+          data:
+          {%- for role in enabled_roles %}
+            - get_param: [role_data, {{role.name}}, external_deploy_tasks]
+          {%- endfor %}
+
 {%- for step in range(1, deploy_steps_max) %}
-# BEGIN service_workflow_tasks handling
+# BEGIN workflow_tasks handling
   WorkflowTasks_Step{{step}}:
     type: OS::Mistral::Workflow
     condition: WorkflowTasks_Step{{step}}_Enabled
     depends_on:
     {%- if step == 1 %}
-    {%- for dep in roles %}
+    {%- for dep in enabled_roles %}
       - {{dep.name}}PreConfig
       - {{dep.name}}ArtifactsDeploy
     {%- endfor %}
     {%- else %}
-    {%- for dep in roles %}
+    {%- for dep in enabled_roles %}
       - {{dep.name}}Deployment_Step{{step -1}}
     {%- endfor %}
     {%- endif %}
     properties:
-      name: {list_join: [".", ["tripleo", {get_param: stack_name}, "workflowtasks", "step{{step}}"]]}
+      name: {list_join: [".", ["tripleo", {get_param: stack_name}, "workflow_tasks", "step{{step}}"]]}
       type: direct
       tasks:
         yaql:
           expression: $.data.where($ != '').select($.get('step{{step}}')).where($ != null).flatten()
           data:
-          {%- for role in roles %}
-            - get_param: [role_data, {{role.name}}, service_workflow_tasks]
+          {%- for role in enabled_roles %}
+            - get_param: [role_data, {{role.name}}, workflow_tasks]
           {%- endfor %}
 
   WorkflowTasks_Step{{step}}_Execution:
@@ -138,19 +169,21 @@ resources:
                 {%- endfor %}
             evaluate_env: false
       always_update: true
-# END service_workflow_tasks handling
+# END workflow_tasks handling
 {% endfor %}
 
+# Artifacts config and HostPrepConfig is done on all roles, not only
+# enabled_roles, because on upgrade we need to write the json files
+# for the operator driven upgrade scripts (the ansible steps consume them)
 {% for role in roles %}
-  # Post deployment steps for all roles
-  # A single config is re-applied with an incrementing step number
-  # {{role.name}} Role steps
+  # Prepare host tasks for {{role.name}}
   {{role.name}}ArtifactsConfig:
     type: ../puppet/deploy-artifacts.yaml
 
   {{role.name}}ArtifactsDeploy:
     type: OS::Heat::StructuredDeploymentGroup
     properties:
+      name: {{role.name}}ArtifactsDeploy
       servers:  {get_param: [servers, {{role.name}}]}
       config: {get_resource: {{role.name}}ArtifactsConfig}
 
@@ -177,64 +210,66 @@ resources:
                   puppet_step_config: {get_param: [role_data, {{role.name}}, step_config]}
                 tasks:
                   # Join host_prep_tasks with the other per-host configuration
-                  yaql:
-                    expression: $.data.host_prep_tasks + $.data.template_tasks
-                    data:
-                      host_prep_tasks: {get_param: [role_data, {{role.name}}, host_prep_tasks]}
-                      template_tasks:
-{%- raw %}
-                        # Write the manifest for baremetal puppet configuration
-                        - name: Create /var/lib/tripleo-config directory
-                          file: path=/var/lib/tripleo-config state=directory
-                        - name: Write the puppet step_config manifest
-                          copy: content="{{puppet_step_config}}" dest=/var/lib/tripleo-config/puppet_step_config.pp force=yes
-                        # this creates a JSON config file for our docker-puppet.py script
-                        - name: Create /var/lib/docker-puppet
-                          file: path=/var/lib/docker-puppet state=directory
-                        - name: Write docker-puppet-tasks json files
-                          copy: content="{{puppet_config | to_json}}" dest=/var/lib/docker-puppet/docker-puppet.json force=yes
-                        # FIXME: can we move docker-puppet somewhere so it's installed via a package?
-                        - name: Write docker-puppet.py
-                          copy: content="{{docker_puppet_script}}" dest=/var/lib/docker-puppet/docker-puppet.py force=yes
-                        # Here we are dumping all the docker container startup configuration data
-                        # so that we can have access to how they are started outside of heat
-                        # and docker-cmd.  This lets us create command line tools to test containers.
-                        # FIXME do we need the docker-container-startup-configs.json or is the new per-step
-                        # data consumed by paunch enough?
-                        - name: Write docker-container-startup-configs
-                          copy: content="{{docker_startup_configs | to_json}}" dest=/var/lib/docker-container-startup-configs.json force=yes
-                        - name: Write per-step docker-container-startup-configs
-                          copy: content="{{item.value|to_json}}" dest="/var/lib/tripleo-config/docker-container-startup-config-{{item.key}}.json" force=yes
-                          with_dict: "{{docker_startup_configs}}"
-                        - name: Create /var/lib/kolla/config_files directory
-                          file: path=/var/lib/kolla/config_files state=directory
-                        - name: Write kolla config json files
-                          copy: content="{{item.value|to_json}}" dest="{{item.key}}" force=yes
-                          with_dict: "{{kolla_config}}"
-                        ########################################################
-                        # Bootstrap tasks, only performed on bootstrap_server_id
-                        ########################################################
-                        - name: Clean /var/lib/docker-puppet/docker-puppet-tasks*.json files
-                          file:
-                            path: "{{item}}"
-                            state: absent
-                          with_fileglob:
-                            - /var/lib/docker-puppet/docker-puppet-tasks*.json
-                          when: deploy_server_id == bootstrap_server_id
-                        - name: Write docker-puppet-tasks json files
-                          copy: content="{{item.value|to_json}}" dest=/var/lib/docker-puppet/docker-puppet-tasks{{item.key.replace("step_", "")}}.json force=yes
-                          with_dict: "{{docker_puppet_tasks}}"
-                          when: deploy_server_id == bootstrap_server_id
-{%- endraw %}
+                  list_concat:
+{%- if is_upgrade|default(false) and role.disable_upgrade_deployment|default(false) %}
+                    - []
+{%- else %}
+                    - {get_param: [role_data, {{role.name}}, host_prep_tasks]}
+{%- endif %}
+                    -
+                      # Write the manifest for baremetal puppet configuration
+                      - name: Create /var/lib/tripleo-config directory
+                        file: path=/var/lib/tripleo-config state=directory
+                      - name: Write the puppet step_config manifest
+                        copy: content="{{ '{{' }}puppet_step_config{{ '}}' }}" dest=/var/lib/tripleo-config/puppet_step_config.pp force=yes mode=0600
+                      # this creates a JSON config file for our docker-puppet.py script
+                      - name: Create /var/lib/docker-puppet
+                        file: path=/var/lib/docker-puppet state=directory
+                      - name: Write docker-puppet-tasks json files
+                        copy: content="{{ '{{' }}puppet_config | to_json{{ '}}' }}" dest=/var/lib/docker-puppet/docker-puppet.json force=yes mode=0600
+                      # FIXME: can we move docker-puppet somewhere so it's installed via a package?
+                      - name: Write docker-puppet.py
+                        copy: content="{{ '{{' }}docker_puppet_script{{ '}}' }}" dest=/var/lib/docker-puppet/docker-puppet.py force=yes mode=0600
+                      # Here we are dumping all the docker container startup configuration data
+                      # so that we can have access to how they are started outside of heat
+                      # and docker-cmd.  This lets us create command line tools to test containers.
+                      # FIXME do we need the docker-container-startup-configs.json or is the new per-step
+                      # data consumed by paunch enough?
+                      - name: Write docker-container-startup-configs
+                        copy: content="{{ '{{' }}docker_startup_configs | to_json{{ '}}' }}" dest=/var/lib/docker-container-startup-configs.json force=yes mode=0600
+                      - name: Write per-step docker-container-startup-configs
+                        copy: content="{{ '{{' }}item.value|to_json{{ '}}' }}" dest="/var/lib/tripleo-config/docker-container-startup-config-{{ '{{' }}item.key{{ '}}' }}.json" force=yes mode=0600
+                        with_dict: "{{ '{{' }}docker_startup_configs{{ '}}' }}"
+                      - name: Create /var/lib/kolla/config_files directory
+                        file: path=/var/lib/kolla/config_files state=directory
+                      - name: Write kolla config json files
+                        copy: content="{{ '{{' }}item.value|to_json{{ '}}' }}" dest="{{ '{{' }}item.key{{ '}}' }}" force=yes mode=0600
+                        with_dict: "{{ '{{' }}kolla_config{{ '}}' }}"
+                      ########################################################
+                      # Bootstrap tasks, only performed on bootstrap_server_id
+                      ########################################################
+                      - name: Clean /var/lib/docker-puppet/docker-puppet-tasks*.json files
+                        file:
+                          path: "{{ '{{' }}item{{ '}}' }}"
+                          state: absent
+                        with_fileglob:
+                          - /var/lib/docker-puppet/docker-puppet-tasks*.json
+                        when: deploy_server_id == bootstrap_server_id
+                      - name: Write docker-puppet-tasks json files
+                        copy: content="{{ '{{' }}item.value|to_json{{ '}}' }}" dest=/var/lib/docker-puppet/docker-puppet-tasks{{ '{{' }}item.key.replace("step_", ""){{ '}}' }}.json force=yes mode=0600
+                        with_dict: "{{ '{{' }}docker_puppet_tasks{{ '}}' }}"
+                        when: deploy_server_id == bootstrap_server_id
 
   {{role.name}}HostPrepDeployment:
     type: OS::Heat::SoftwareDeploymentGroup
     properties:
+      name: {{role.name}}HostPrepDeployment
       servers: {get_param: [servers, {{role.name}}]}
       config: {get_resource: {{role.name}}HostPrepConfig}
+{% endfor %}
 
-  # BEGIN CONFIG STEPS
-
+  # BEGIN CONFIG STEPS, only on enabled_roles
+{%- for role in enabled_roles %}
   {{role.name}}PreConfig:
     type: OS::TripleO::Tasks::{{role.name}}PreConfig
     depends_on: {{role.name}}HostPrepDeployment
@@ -243,6 +278,8 @@ resources:
       input_values:
         update_identifier: {get_param: DeployIdentifier}
 
+  # Deployment steps for {{role.name}}
+  # A single config is re-applied with an incrementing step number
   {% for step in range(1, deploy_steps_max) %}
   {{role.name}}Deployment_Step{{step}}:
     type: OS::TripleO::DeploymentSteps
@@ -254,12 +291,12 @@ resources:
     # if https://bugs.launchpad.net/heat/+bug/1700569
     # is fixed.
     {%- if step == 1 %}
-    {%- for dep in roles %}
+    {%- for dep in enabled_roles %}
       - {{dep.name}}PreConfig
       - {{dep.name}}ArtifactsDeploy
     {%- endfor %}
     {%- else %}
-    {%- for dep in roles %}
+    {%- for dep in enabled_roles %}
       - {{dep.name}}Deployment_Step{{step -1}}
     {%- endfor %}
     {%- endif %}
@@ -272,7 +309,9 @@ resources:
         role_name: {{role.name}}
         update_identifier: {get_param: DeployIdentifier}
         bootstrap_server_id: {get_param: [servers, {{primary_role_name}}, '0']}
+        enable_debug: {get_param: ConfigDebug}
         docker_puppet_debug: {get_param: DockerPuppetDebug}
+        docker_puppet_process_count: {get_param: DockerPuppetProcessCount}
   {% endfor %}
   # END CONFIG STEPS
 
@@ -281,7 +320,7 @@ resources:
   # after all the previous deployment steps.
   {{role.name}}ExtraConfigPost:
     depends_on:
-  {%- for dep in roles %}
+  {%- for dep in enabled_roles %}
       - {{dep.name}}Deployment_Step5
   {%- endfor %}
     type: OS::TripleO::NodeExtraConfigPost
@@ -294,7 +333,7 @@ resources:
   {{role.name}}PostConfig:
     type: OS::TripleO::Tasks::{{role.name}}PostConfig
     depends_on:
-  {%- for dep in roles %}
+  {%- for dep in enabled_roles %}
       - {{dep.name}}ExtraConfigPost
   {%- endfor %}
     properties:
@@ -310,17 +349,69 @@ outputs:
     description: Mapping of config data for all roles
     value:
       deploy_steps_tasks: {get_file: deploy-steps-tasks.yaml}
-      deploy_steps_playbook: |
-        - hosts: overcloud
-          tasks:
+      deploy_steps_playbook:
+        str_replace:
+          params:
+            BOOTSTRAP_SERVER_ID: {get_param: [servers, {{primary_role_name}}, '0']}
+          template: |
+            - hosts: undercloud:overcloud
+              name: Gather facts
+              gather_facts: yes
+            - hosts: overcloud
+              name: Server deployments
+              gather_facts: no
+              any_errors_fatal: yes
+              tasks:
 {%- for role in roles %}
-            - include: {{role.name}}/host_prep_tasks.yaml
-              when: role_name == '{{role.name}}'
+                - include: {{role.name}}/deployments.yaml
+                  vars:
+                    force: false
+                  when: role_name == '{{role.name}}'
+                  with_items: "{{ '{{' }} {{role.name}}_pre_deployments|default([]) {{ '}}' }}"
 {%- endfor %}
-            - include: deploy_steps_tasks.yaml
-              with_sequence: count={{deploy_steps_max-1}}
-              loop_control:
-                loop_var: step
+            - hosts: overcloud
+              name: Deployment steps
+              gather_facts: no
+              any_errors_fatal: yes
+              vars:
+                bootstrap_server_id: BOOTSTRAP_SERVER_ID
+              tasks:
+{%- for role in roles %}
+                - include: {{role.name}}/host_prep_tasks.yaml
+                  when: role_name == '{{role.name}}'
+{%- endfor %}
+{%- for step in range(1,deploy_steps_max) %}
+            - hosts: undercloud
+              name: Undercloud deployment step {{step}}
+              gather_facts: no
+              any_errors_fatal: yes
+              vars:
+                step: '{{step}}'
+              tasks:
+                - include: external_deploy_steps_tasks.yaml
+            - hosts: overcloud
+              name: Overcloud deployment step {{step}}
+              gather_facts: no
+              any_errors_fatal: yes
+              vars:
+                bootstrap_server_id: BOOTSTRAP_SERVER_ID
+                step: '{{step}}'
+              tasks:
+                - include: deploy_steps_tasks.yaml
+{%- endfor %}
+            - hosts: overcloud
+              name: Server Post Deployments
+              gather_facts: no
+              any_errors_fatal: yes
+              tasks:
+{%- for role in roles %}
+                - include: {{role.name}}/deployments.yaml
+                  vars:
+                    force: false
+                  when: role_name == '{{role.name}}'
+                  with_items: "{{ '{{' }} {{role.name}}_post_deployments|default([]) {{ '}}' }}"
+{%- endfor %}
+      external_deploy_steps_tasks: {get_attr: [ExternalDeployTasks, value]}
       update_steps_tasks: |
 {%- for role in roles %}
             - include: {{role.name}}/update_tasks.yaml
@@ -331,11 +422,11 @@ outputs:
           serial: 1
           tasks:
             - include: update_steps_tasks.yaml
-              with_sequence: count={{update_steps_max-1}}
+              with_sequence: start=1 end={{update_steps_max-1}}
               loop_control:
                 loop_var: step
             - include: deploy_steps_tasks.yaml
-              with_sequence: count={{deploy_steps_max-1}}
+              with_sequence: start=1 end={{deploy_steps_max-1}}
               loop_control:
                 loop_var: step
       upgrade_steps_tasks: |
@@ -347,11 +438,6 @@ outputs:
         - hosts: overcloud
           tasks:
             - include: upgrade_steps_tasks.yaml
-              with_sequence: count={{upgrade_steps_max-1}}
+              with_sequence: start=1 end={{upgrade_steps_max-1}}
               loop_control:
                 loop_var: step
-            - include: deploy_steps_tasks.yaml
-              with_sequence: count={{deploy_steps_max-1}}
-              loop_control:
-                loop_var: step
-

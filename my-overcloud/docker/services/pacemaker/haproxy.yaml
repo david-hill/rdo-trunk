@@ -78,8 +78,7 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [HAProxyBase, role_data, config_settings]
-          - tripleo::haproxy::haproxy_daemon: false
-            haproxy_docker: true
+          - haproxy_docker: true
             tripleo::profile::pacemaker::haproxy_bundle::haproxy_docker_image: &haproxy_image {get_param: DockerHAProxyImage}
             # the list of directories that contain the certs to bind mount in the countainer
             # bind-mounting the directories rather than all the cert, key and pem files ensures
@@ -88,6 +87,7 @@ outputs:
               - get_param: InternalTLSCAFile
               - get_param: HAProxyInternalTLSKeysDirectory
               - get_param: HAProxyInternalTLSCertsDirectory
+              - get_param: DeployedSSLCertificatePath
             tripleo::profile::pacemaker::haproxy_bundle::internal_certs_directory: {get_param: HAProxyInternalTLSCertsDirectory}
             tripleo::profile::pacemaker::haproxy_bundle::internal_keys_directory: {get_param: HAProxyInternalTLSKeysDirectory}
             # disable the use CRL file until we can restart the container when the file expires
@@ -99,6 +99,8 @@ outputs:
                       data: {get_param: DockerHAProxyImage}
                       expression: $.data.rightSplit(separator => ":", maxSplits => 1)[0]
                   - 'pcmklatest'
+      logging_source: {get_attr: [HAProxyBase, role_data, logging_source]}
+      logging_groups: {get_attr: [HAProxyBase, role_data, logging_groups]}
       step_config: ""
       service_config_settings: {get_attr: [HAProxyBase, role_data, service_config_settings]}
       # BEGIN DOCKER SETTINGS
@@ -119,7 +121,7 @@ outputs:
             data: *tls_mapping
       kolla_config:
         /var/lib/kolla/config_files/haproxy.json:
-          command: haproxy -f /etc/haproxy/haproxy.cfg
+          command: /usr/sbin/haproxy-systemd-wrapper -f /etc/haproxy/haproxy.cfg
           config_files:
             - source: "/var/lib/kolla/config_files/src/*"
               dest: "/"
@@ -223,17 +225,61 @@ outputs:
         - name: set is_bootstrap_node fact
           tags: common
           set_fact: is_bootstrap_node={{bootstrap_node.stdout|lower == ansible_hostname|lower}}
+        - name: Check cluster resource status
+          tags: step2
+          pacemaker_resource:
+            resource: {get_attr: [HAProxyBase, role_data, service_name]}
+            state: started
+            check_mode: true
+          ignore_errors: true
+          register: haproxy_res
         - name: Disable the haproxy cluster resource.
           tags: step2
           pacemaker_resource:
             resource: {get_attr: [HAProxyBase, role_data, service_name]}
             state: disable
             wait_for_resource: true
-          when: is_bootstrap_node
+          register: output
+          retries: 5
+          until: output.rc == 0
+          when: is_bootstrap_node and haproxy_res|succeeded
         - name: Delete the stopped haproxy cluster resource.
           tags: step2
           pacemaker_resource:
             resource: {get_attr: [HAProxyBase, role_data, service_name]}
             state: delete
             wait_for_resource: true
-          when: is_bootstrap_node
+          register: output
+          retries: 5
+          until: output.rc == 0
+          when: is_bootstrap_node and haproxy_res|succeeded
+      update_tasks:
+        - name: Get docker Haproxy image
+          set_fact:
+            docker_image: {get_param: DockerHAProxyImage}
+            docker_image_latest: *haproxy_image_pcmklatest
+          when: step == '2'
+        - name: Get previous Haproxy image id
+          shell: "docker images | awk '/haproxy.* pcmklatest/{print $3}'"
+          register: haproxy_image_id
+        - block:
+            - name: Get a list of container using Haproxy image
+              shell: "docker ps -q -f 'ancestor={{haproxy_image_id.stdout}}'"
+              register: haproxy_containers_to_destroy
+            # It will be recreated with the delpoy step.
+            - name: Remove any container using the same Haproxy image
+              shell: "docker rm -fv {{item}}"
+              with_items: "{{ haproxy_containers_to_destroy.stdout_lines }}"
+            - name: Remove previous Haproxy images
+              shell: "docker rmi -f {{haproxy_image_id.stdout}}"
+          when:
+            - step == '2'
+            - haproxy_image_id.stdout != ''
+        - name: Pull latest Haproxy images
+          command: "docker pull {{docker_image}}"
+          when: step == "2"
+        - name: Retag pcmklatest to latest Haproxy image
+          shell: "docker tag {{docker_image}} {{docker_image_latest}}"
+          when: step == "2"
+        # Got to check that pacemaker_is_active is working fine with bundle.
+        # TODO: pacemaker_is_active resource doesn't support bundle.

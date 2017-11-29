@@ -31,7 +31,7 @@ resource_registry:
   {%- else %}
   # Note we have to special-case ObjectStorage for backwards compatibility
     {%- for network in networks %}
-  OS::TripleO::SwiftStorage::Ports::{{network.name}}Port: network/ports/noop.yaml
+  OS::TripleO::ObjectStorage::Ports::{{network.name}}Port: network/ports/noop.yaml
     {%- endfor %}
   {%- endif %}
   OS::TripleO::{{role.name}}::Net::SoftwareConfig: net-config-noop.yaml
@@ -133,11 +133,15 @@ resource_registry:
   OS::TripleO::Services::GlanceRegistry: puppet/services/disabled/glance-registry-disabled.yaml
   OS::TripleO::Services::HeatApi: puppet/services/heat-api.yaml
   OS::TripleO::Services::HeatApiCfn: puppet/services/heat-api-cfn.yaml
-  OS::TripleO::Services::HeatApiCloudwatch: puppet/services/heat-api-cloudwatch.yaml
+  OS::TripleO::Services::HeatApiCloudwatch: puppet/services/disabled/heat-api-cloudwatch-disabled.yaml
   OS::TripleO::Services::HeatEngine: puppet/services/heat-engine.yaml
   OS::TripleO::Services::Kernel: puppet/services/kernel.yaml
+  OS::TripleO::Services::Kubernetes::Master: extraconfig/services/kubernetes-master.yaml
+  OS::TripleO::Services::Kubernetes::Worker: extraconfig/services/kubernetes-worker.yaml
   OS::TripleO::Services::MySQL: puppet/services/database/mysql.yaml
   OS::TripleO::Services::NeutronBgpVpnApi: OS::Heat::None
+  OS::TripleO::Services::NeutronBgpVpnBagpipe: OS::Heat::None
+  OS::TripleO::Services::NeutronSfcApi: OS::Heat::None
   OS::TripleO::Services::NeutronDhcpAgent: puppet/services/neutron-dhcp.yaml
   OS::TripleO::Services::NeutronL2gwApi: OS::Heat::None
   OS::TripleO::Services::NeutronL3Agent: puppet/services/neutron-l3.yaml
@@ -152,6 +156,7 @@ resource_registry:
   # can be the same as NeutronCorePlugin but some vendors install different
   # things where VMs run
   OS::TripleO::Services::ComputeNeutronCorePlugin: puppet/services/neutron-plugin-ml2.yaml
+  OS::TripleO::Services::ComputeNeutronCorePluginNuage: puppet/services/neutron-compute-plugin-nuage.yaml
   # Neutron Core Plugin Vendors (these typically override NeutronCorePlugin)
   OS::TripleO::Services::NeutronCorePluginML2OVN: puppet/services/neutron-plugin-ml2-ovn.yaml
   OS::TripleO::Services::NeutronCorePluginPlumgrid: puppet/services/neutron-plugin-plumgrid.yaml
@@ -169,6 +174,7 @@ resource_registry:
   OS::TripleO::Services::Pacemaker: OS::Heat::None
   OS::TripleO::Services::PacemakerRemote: OS::Heat::None
   OS::TripleO::Services::NeutronSriovAgent: OS::Heat::None
+  OS::TripleO::Services::NeutronSriovHostConfig: OS::Heat::None
   OS::TripleO::Services::RabbitMQ: puppet/services/rabbitmq.yaml
   OS::TripleO::Services::Qdr: OS::Heat::None
   OS::TripleO::Services::HAproxy: puppet/services/haproxy.yaml
@@ -197,6 +203,7 @@ resource_registry:
   OS::TripleO::Services::Ntp: puppet/services/time/ntp.yaml
   OS::TripleO::Services::ContainersLogrotateCrond: OS::Heat::None
   OS::TripleO::Services::SwiftProxy: puppet/services/swift-proxy.yaml
+  OS::TripleO::Services::SwiftDispersion: puppet/services/swift-dispersion.yaml
   OS::TripleO::Services::ExternalSwiftProxy: OS::Heat::None
   OS::TripleO::Services::SwiftStorage: puppet/services/swift-storage.yaml
   OS::TripleO::Services::SwiftRingBuilder: puppet/services/swift-ringbuilder.yaml
@@ -231,8 +238,12 @@ resource_registry:
   OS::TripleO::Services::ManilaScheduler: OS::Heat::None
   OS::TripleO::Services::ManilaShare: OS::Heat::None
   OS::TripleO::Services::ManilaBackendGeneric: OS::Heat::None
+  OS::TripleO::Services::ManilaBackendIsilon: OS::Heat::None
   OS::TripleO::Services::ManilaBackendNetapp: OS::Heat::None
+  OS::TripleO::Services::ManilaBackendUnity: OS::Heat::None
+  OS::TripleO::Services::ManilaBackendVMAX: OS::Heat::None
   OS::TripleO::Services::ManilaBackendCephFs: OS::Heat::None
+  OS::TripleO::Services::ManilaBackendVNX: OS::Heat::None
   OS::TripleO::Services::ComputeNeutronL3Agent: OS::Heat::None
   OS::TripleO::Services::ComputeNeutronMetadataAgent: OS::Heat::None
   OS::TripleO::Services::BarbicanApi: OS::Heat::None
@@ -249,9 +260,11 @@ resource_registry:
   OS::TripleO::Services::MistralEngine: OS::Heat::None
   OS::TripleO::Services::MistralApi: OS::Heat::None
   OS::TripleO::Services::MistralExecutor: OS::Heat::None
+  OS::TripleO::Services::MistralEventEngine: OS::Heat::None
   OS::TripleO::Services::IronicApi: OS::Heat::None
   OS::TripleO::Services::IronicConductor: OS::Heat::None
   OS::TripleO::Services::IronicInspector: OS::Heat::None
+  OS::TripleO::Services::IronicPxe: OS::Heat::None
   OS::TripleO::Services::NovaIronic: OS::Heat::None
   OS::TripleO::Services::TripleoPackages: puppet/services/tripleo-packages.yaml
   OS::TripleO::Services::TripleoFirewall: puppet/services/tripleo-firewall.yaml
@@ -265,6 +278,7 @@ resource_registry:
   OS::TripleO::Services::CinderBackendDellPs: OS::Heat::None
   OS::TripleO::Services::CinderBackendDellSc: OS::Heat::None
   OS::TripleO::Services::CinderBackendDellEMCUnity: OS::Heat::None
+  OS::TripleO::Services::CinderBackendDellEMCVMAXISCSI: OS::Heat::None
   OS::TripleO::Services::CinderBackendNetApp: OS::Heat::None
   OS::TripleO::Services::CinderBackendScaleIO: OS::Heat::None
   OS::TripleO::Services::CinderBackendVRTSHyperScale: OS::Heat::None
@@ -283,6 +297,15 @@ resource_registry:
   OS::TripleO::Services::CertmongerUser: OS::Heat::None
   OS::TripleO::Services::Clustercheck: OS::Heat::None
   OS::TripleO::Services::VRTSHyperScale: OS::Heat::None
+  OS::TripleO::Services::SkydiveAgent: OS::Heat::None
+  OS::TripleO::Services::SkydiveAnalyzer: OS::Heat::None
+
+  # Logging
+  OS::TripleO::Services::Logging::GlanceApi: docker/services/logging/files/glance-api.yaml
+  OS::TripleO::Services::Logging::Keystone: docker/services/logging/files/keystone.yaml
+  OS::TripleO::Services::Logging::NovaApi: docker/services/logging/files/nova-api.yaml
+  OS::TripleO::Services::Logging::NovaCommon: docker/services/logging/files/nova-common.yaml
+  OS::TripleO::Services::Logging::NovaPlacement: docker/services/logging/files/nova-placement.yaml
 
 parameter_defaults:
   EnablePackageInstall: false

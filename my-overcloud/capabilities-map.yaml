@@ -211,6 +211,11 @@ topics:
         description: >
           Enable various Neutron plugins and backends
         environments:
+          - file: environments/neutron-sfc.yaml
+            title: Neutron SFC Service Plugin
+            description: Enables Neutron SFC Service Plugin
+            requires:
+              - overcloud-resource-registry-puppet.yaml
           - file: environments/neutron-bgpvpn.yaml
             title: Neutron BGPVPN Service Plugin
             description: Enables Neutron BGPVPN Service Plugin
@@ -220,6 +225,12 @@ topics:
             title: Neutron LBaaSv2 Service Plugin
             description: Enables Neutron LBaaSv2 Service Plugin and Agent
             requires:
+              - overcloud-resource-registry-puppet.yaml
+          - file: environments/neutron-bgpvpn-bagpipe.yaml
+            title: Neutron Bagpipe Driver for BGPVPN Service Plugin
+            description: Enables Neutron Bagpipe Driver as BGPVPN backend
+            requires:
+              - environments/neutron-bgpvpn.yaml
               - overcloud-resource-registry-puppet.yaml
           - file: environments/neutron-ml2-bigswitch.yaml
             title: BigSwitch Extensions
@@ -316,6 +327,10 @@ topics:
             title: Cinder Dell EMC Unity backend
             description: >
               Enables a Cinder Dell EMC Unity backend,
+          - file: environments/cinder-dellemc-vmax-iscsi-config.yaml
+            title: Cinder Dell EMC VMAX ISCSI backend
+            description: >
+              Enables a Cinder Dell EMC VMAX ISCSI backend,
               configured via puppet
             requires:
               - overcloud-resource-registry-puppet.yaml
@@ -399,6 +414,36 @@ topics:
             description: >
               Deploys Manila and configures it with the CephFS driver. This requires the deployment of
               Ceph and CephMDS from TripleO or the use of an external Ceph cluster for the overcloud.
+            requires:
+              - overcloud-resource-registry-puppet.yaml
+      - title: Manila with Unity
+        description: >
+          Deploys Manila and configures it with the Unity driver.
+        environments:
+          - file: environments/manila-unity-config.yaml
+            title: Deploys Manila with Unity driver
+            description: Deploys Manila and configures Unity as its default backend.
+      - title: Manila with VNX
+        description: >
+          Deploys Manila and configures it with the VNX driver.
+        environments:
+          - file: environments/manila-vnx-config.yaml
+            title: Deploys Manila with VNX driver
+            description: Deploys Manila and configures VNX as its default backend.
+      - title: Manila with VMAX
+        description: >
+          Deploys Manila and configures it with the VMAX driver.
+        environments:
+          - file: environments/manila-vmax-config.yaml
+            title: Deploys Manila with VMAX driver
+            description: Deploys Manila and configures VMAX as its default backend.
+      - title: Manila with Isilon
+        description: >
+          Deploys Manila and configures it with the Isilon driver.
+        environments:
+          - file: environments/manila-isilon-config.yaml
+            title: Deploys Manila with Isilon driver
+            description: Deploys Manila and configures Isilon as its default backend.
             requires:
               - overcloud-resource-registry-puppet.yaml
       - title: Glance backends

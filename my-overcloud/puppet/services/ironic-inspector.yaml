@@ -1,4 +1,4 @@
-heat_template_version: ocata
+heat_template_version: pike
 
 description: >
   OpenStack Ironic Inspector configured with Puppet (EXPERIMENTAL)
@@ -38,9 +38,9 @@ parameters:
     default: 'regionOne'
     description: Keystone region for endpoint
   Debug:
-    default: ''
+    default: false
     description: Set to True to enable debugging on all services.
-    type: string
+    type: boolean
   IronicInspectorInterface:
     default: br-ex
     description: |

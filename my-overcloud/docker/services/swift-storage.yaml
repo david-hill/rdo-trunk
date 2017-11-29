@@ -50,7 +50,10 @@ parameters:
     default: {}
     description: 'A hash of additional raw devices to use as Swift backend (eg. {sdb: {}})'
     type: json
-
+  UpgradeRemoveUnusedPackages:
+    default: false
+    description: Remove package if the service is being disabled during upgrade
+    type: boolean
 
 resources:
 
@@ -77,8 +80,13 @@ outputs:
           - {get_attr: [SwiftStorageBase, role_data, config_settings]}
           # FIXME (cschwede): re-enable this once checks works inside containers
           - swift::storage::all::mount_check: false
+      logging_source: {get_attr: [SwiftStorageBase, role_data, logging_source]}
+      logging_groups: {get_attr: [SwiftStorageBase, role_data, logging_groups]}
       step_config: &step_config
-        get_attr: [SwiftStorageBase, role_data, step_config]
+        list_join:
+          - "\n"
+          - - {get_attr: [SwiftStorageBase, role_data, step_config]}
+            - "class xinetd() {}"
       service_config_settings: {get_attr: [SwiftStorageBase, role_data, service_config_settings]}
       # BEGIN DOCKER SETTINGS
       puppet_config:
@@ -466,3 +474,18 @@ outputs:
             - openstack-swift-object-replicator
             - openstack-swift-object-updater
             - openstack-swift-object
+        - name: Remove openstack-swift-container,object,account packages if operator requests it
+          yum: name={{ item }} state=removed
+          tags: step2
+          ignore_errors: True
+          when: {get_param: UpgradeRemoveUnusedPackages}
+          with_items:
+            - openstack-swift-container
+            - openstack-swift-object
+            - openstack-swift-account
+        - name: Remove rsync service from xinetd
+          tags: step2
+          file: state=absent path=/etc/xinetd.d/rsync
+        - name: Restart xinetd service after rsync removal
+          tags: step2
+          service: name=xinetd state=restarted

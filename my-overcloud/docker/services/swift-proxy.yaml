@@ -39,6 +39,10 @@ parameters:
   EnableInternalTLS:
     type: boolean
     default: false
+  UpgradeRemoveUnusedPackages:
+    default: false
+    description: Remove package if the service is being disabled during upgrade
+    type: boolean
 
 conditions:
 
@@ -67,6 +71,8 @@ outputs:
       config_settings: {get_attr: [SwiftProxyBase, role_data, config_settings]}
       step_config: &step_config
         get_attr: [SwiftProxyBase, role_data, step_config]
+      logging_source: {get_attr: [SwiftProxyBase, role_data, logging_source]}
+      logging_groups: {get_attr: [SwiftProxyBase, role_data, logging_groups]}
       service_config_settings: {get_attr: [SwiftProxyBase, role_data, service_config_settings]}
       # BEGIN DOCKER SETTINGS
       puppet_config:
@@ -111,6 +117,7 @@ outputs:
                       - /srv/node:/srv/node
                       - /dev:/dev
                       - /var/log/containers/swift:/var/log/swift
+                      - /var/log/containers/httpd/swift-proxy:/var/log/httpd
                 environment:
                   - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
             - if:
@@ -138,10 +145,16 @@ outputs:
             state: directory
           with_items:
             - /var/log/containers/swift
+            - /var/log/containers/httpd/swift-proxy
             - /srv/node
       upgrade_tasks:
         - name: Stop and disable swift_proxy service
           tags: step2
           service: name=openstack-swift-proxy state=stopped enabled=no
+        - name: Remove openstack-swift-proxy package if operator requests it
+          yum: name=openstack-swift-proxy state=removed
+          tags: step2
+          ignore_errors: True
+          when: {get_param: UpgradeRemoveUnusedPackages}
       metadata_settings:
         get_attr: [SwiftProxyBase, role_data, metadata_settings]

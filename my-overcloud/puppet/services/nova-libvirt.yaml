@@ -94,7 +94,7 @@ parameters:
       public_key: ''
       private_key: ''
   MigrationSshPort:
-    default: 22
+    default: 2022
     description: Target port for migration over ssh
     type: number
 
@@ -170,6 +170,8 @@ outputs:
               -
                 generate_service_certificates: true
                 tripleo::profile::base::nova::migration::client::libvirt_tls: true
+                nova::migration::libvirt::listen_address:
+                  get_param: [ServiceNetMap, NovaLibvirtNetwork]
                 nova::migration::libvirt::live_migration_inbound_addr:
                   str_replace:
                     template:

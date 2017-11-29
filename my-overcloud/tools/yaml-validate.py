@@ -11,11 +11,20 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import argparse
 import os
 import sys
 import traceback
 import yaml
 
+# Only permit the template alias versions
+# The current template version should be the last element
+valid_heat_template_versions = [
+  'newton',
+  'ocata',
+  'pike',
+]
+current_heat_template_version = valid_heat_template_versions[-1]
 
 required_params = ['EndpointMap', 'ServiceNetMap', 'DefaultPasswords',
                    'RoleName', 'RoleParameters', 'ServiceData']
@@ -31,20 +40,28 @@ envs_containing_endpoint_map = ['tls-endpoints-public-dns.yaml',
                                 'tls-endpoints-public-ip.yaml',
                                 'tls-everywhere-endpoints-dns.yaml']
 ENDPOINT_MAP_FILE = 'endpoint_map.yaml'
-OPTIONAL_SECTIONS = ['service_workflow_tasks']
+OPTIONAL_SECTIONS = ['workflow_tasks']
 REQUIRED_DOCKER_SECTIONS = ['service_name', 'docker_config', 'puppet_config',
                             'config_settings', 'step_config']
 OPTIONAL_DOCKER_SECTIONS = ['docker_puppet_tasks', 'upgrade_tasks',
+                            'post_upgrade_tasks',  'update_tasks',
                             'service_config_settings', 'host_prep_tasks',
-                            'metadata_settings', 'kolla_config']
+                            'metadata_settings', 'kolla_config',
+                            'global_config_settings', 'logging_source',
+                            'logging_groups', 'external_deploy_tasks']
 REQUIRED_DOCKER_PUPPET_CONFIG_SECTIONS = ['config_volume', 'step_config',
                                           'config_image']
 OPTIONAL_DOCKER_PUPPET_CONFIG_SECTIONS = [ 'puppet_tags', 'volumes' ]
+REQUIRED_DOCKER_LOGGING_OUTPUTS = ['config_settings', 'docker_config',
+                                   'volumes', 'host_prep_tasks']
 # Mapping of parameter names to a list of the fields we should _not_ enforce
 # consistency across files on.  This should only contain parameters whose
 # definition we cannot change for backwards compatibility reasons.  New
 # parameters to the templates should not be added to this list.
-PARAMETER_DEFINITION_EXCLUSIONS = {'ManagementNetCidr': ['default'],
+PARAMETER_DEFINITION_EXCLUSIONS = {'CephPools': ['description',
+                                                 'type',
+                                                 'default'],
+                                   'ManagementNetCidr': ['default'],
                                    'ManagementAllocationPools': ['default'],
                                    'ExternalNetCidr': ['default'],
                                    'ExternalAllocationPools': ['default'],
@@ -87,6 +104,8 @@ PARAMETER_DEFINITION_EXCLUSIONS = {'ManagementNetCidr': ['default'],
                                    'OVNSouthboundServerPort': ['description'],
                                    'ExternalInterfaceDefaultRoute':
                                        ['description', 'default'],
+                                   'ManagementInterfaceDefaultRoute':
+                                       ['description', 'default'],
                                    'IPPool': ['description'],
                                    'SSLCertificate': ['description',
                                                       'default',
@@ -106,6 +125,7 @@ PARAMETER_DEFINITION_EXCLUSIONS = {'ManagementNetCidr': ['default'],
                                    'NovaComputeExtraConfig': ['description'],
                                    'controllerExtraConfig': ['description'],
                                    'DockerSwiftConfigImage': ['default'],
+                                   'input_values': ['default']
                                    }
 
 PREFERRED_CAMEL_CASE = {
@@ -113,6 +133,22 @@ PREFERRED_CAMEL_CASE = {
     'haproxy': 'HAProxy',
 }
 
+# Overrides for docker/puppet validation
+# <filename>: True explicitly enables validation
+# <filename>: False explicitly disables validation
+#
+# If a filename is not found in the overrides then the top level directory is
+# used to determine which validation method to use.
+VALIDATE_PUPPET_OVERRIDE = {
+  # docker/service/sshd.yaml is a variation of the puppet sshd service
+  './docker/services/sshd.yaml': True,
+  # qdr aliases rabbitmq service to provide alternative messaging backend
+  './puppet/services/qdr.yaml': False,
+}
+VALIDATE_DOCKER_OVERRIDE = {
+  # docker/service/sshd.yaml is a variation of the puppet sshd service
+  './docker/services/sshd.yaml': False,
+}
 
 def exit_usage():
     print('Usage %s <yaml file or directory>' % sys.argv[0])
@@ -356,12 +392,31 @@ def validate_docker_service(filename, tpl):
                       print('ERROR: bootstrap_host_exec needs to run as the root user.')
                       return 1
 
+        if 'upgrade_tasks' in role_data and role_data['upgrade_tasks'] and \
+                validate_upgrade_tasks(role_data['upgrade_tasks']):
+            print('ERROR: upgrade_tasks validation failed')
+            return 1
+
     if 'parameters' in tpl:
         for param in required_params:
             if param not in tpl['parameters']:
                 print('ERROR: parameter %s is required for %s.'
                       % (param, filename))
                 return 1
+    return 0
+
+
+def validate_docker_logging_template(filename, tpl):
+    if 'outputs' not in tpl:
+        print('ERROR: outputs are missing from: %s' % filename)
+        return 1
+    missing_entries = [
+        entry for entry in REQUIRED_DOCKER_LOGGING_OUTPUTS
+        if entry not in tpl['outputs']]
+    if any(missing_entries):
+        print('ERROR: The file %s is missing the following output(s):'
+              ' %s' % (filename, ', '.join(missing_entries)))
+        return 1
     return 0
 
 
@@ -387,6 +442,10 @@ def validate_service(filename, tpl):
         if 'config_settings' in role_data and \
            validate_mysql_connection(role_data['config_settings']):
             print('ERROR: mysql connection uri should use option bind_address')
+            return 1
+        if 'upgrade_tasks' in role_data and role_data['upgrade_tasks'] and \
+                validate_upgrade_tasks(role_data['upgrade_tasks']):
+            print('ERROR: upgrade_tasks validation failed')
             return 1
     if 'parameters' in tpl:
         for param in required_params:
@@ -421,24 +480,48 @@ def validate(filename, param_map):
                                 ...
                            ]}
     """
-    print('Validating %s' % filename)
+    if args.quiet < 1:
+        print('Validating %s' % filename)
     retval = 0
     try:
         tpl = yaml.load(open(filename).read())
 
-        # The template alias version should be used instead a date, this validation
-        # will be applied to all templates not just for those in the services folder.
-        if 'heat_template_version' in tpl and not str(tpl['heat_template_version']).isalpha():
-            print('ERROR: heat_template_version needs to be the release alias not a date: %s'
-                  % filename)
-            return 1
+        is_heat_template = 'heat_template_version' in tpl
 
-        # qdr aliases rabbitmq service to provide alternative messaging backend
-        if (filename.startswith('./puppet/services/') and
-                filename not in ['./puppet/services/qdr.yaml']):
+        # The template version should be in the list of supported versions for the current release.
+        # This validation will be applied to all templates not just for those in the services folder.
+        if is_heat_template:
+            tpl_template_version = str(tpl['heat_template_version'])
+            if tpl_template_version not in valid_heat_template_versions:
+                print('ERROR: heat_template_version in template %s '
+                      'is not valid: %s (allowed values %s)'
+                    % (
+                        filename,
+                        tpl_template_version,
+                        ', '.join(valid_heat_template_versions)
+                    )
+                )
+                return 1
+            if tpl_template_version != current_heat_template_version:
+                print('Warning: heat_template_version in template %s '
+                      'is outdated: %s (current %s)'
+                    % (
+                        filename,
+                        tpl_template_version,
+                        current_heat_template_version
+                    )
+                )
+
+        if VALIDATE_PUPPET_OVERRIDE.get(filename, False) or (
+                filename.startswith('./puppet/services/') and
+                VALIDATE_PUPPET_OVERRIDE.get(filename, True)):
             retval = validate_service(filename, tpl)
 
-        if filename.startswith('./docker/services/'):
+        if filename.startswith('./docker/services/logging/'):
+            retval = validate_docker_logging_template(filename, tpl)
+        elif VALIDATE_DOCKER_OVERRIDE.get(filename, False) or (
+                filename.startswith('./docker/services/') and
+                VALIDATE_DOCKER_OVERRIDE.get(filename, True)):
             retval = validate_docker_service(filename, tpl)
 
         if filename.endswith('hyperconverged-ceph.yaml'):
@@ -451,7 +534,7 @@ def validate(filename, param_map):
         print(traceback.format_exc())
         return 1
     # yaml is OK, now walk the parameters and output a warning for unused ones
-    if 'heat_template_version' in tpl:
+    if is_heat_template:
         for p, data in tpl.get('parameters', {}).items():
             definition = {'data': data, 'filename': filename}
             param_map.setdefault(p, []).append(definition)
@@ -460,16 +543,48 @@ def validate(filename, param_map):
             str_p = '\'%s\'' % p
             in_resources = str_p in str(tpl.get('resources', {}))
             in_outputs = str_p in str(tpl.get('outputs', {}))
-            if not in_resources and not in_outputs:
+            if not in_resources and not in_outputs and args.quiet < 2:
                 print('Warning: parameter %s in template %s '
                       'appears to be unused' % (p, filename))
 
     return retval
 
-if len(sys.argv) < 2:
-    exit_usage()
+def validate_upgrade_tasks(upgrade_steps):
+    # some templates define its upgrade_tasks via list_concat
+    if isinstance(upgrade_steps, dict):
+        if upgrade_steps.get('list_concat'):
+            return validate_upgrade_tasks(upgrade_steps['list_concat'][1])
+        elif upgrade_steps.get('get_attr'):
+            return 0
 
-path_args = sys.argv[1:]
+    for step in upgrade_steps:
+        if 'tags' not in step.keys():
+            if 'name' in step.keys():
+                print('ERROR: upgrade task named (%s) is missing its tags keyword.'
+                        % step['name'])
+            else:
+                print('ERROR: upgrade task (%s) is missing its tags keyword.'
+                        % step)
+            return 1
+
+    return 0
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+
+    p.add_argument('--quiet', '-q',
+                   action='count',
+                   help='output warnings and errors (-q) or only errors (-qq)')
+    p.add_argument('path_args',
+                   nargs='*',
+                   default=['.'])
+
+    return p.parse_args()
+
+args = parse_args()
+path_args = args.path_args
+quiet = args.quiet
 exit_val = 0
 failed_files = []
 base_endpoint_map = None
@@ -513,7 +628,7 @@ if base_endpoint_map and \
                   "endpoint map" % env_endpoint_map['file'])
             failed_files.append(env_endpoint_map['file'])
             exit_val |= 1
-        else:
+        elif args.quiet < 1:
             print("%s matches base endpoint map" % env_endpoint_map['file'])
 else:
     print("ERROR: Did not find expected number of environments containing the "

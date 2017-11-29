@@ -27,6 +27,7 @@ parameter_defaults:
   # following as needed.
   NovaRbdPoolName: vms
   CinderRbdPoolName: volumes
+  CinderBackupRbdPoolName: backups
   GlanceRbdPoolName: images
   GnocchiRbdPoolName: metrics
   CephClientUserName: openstack

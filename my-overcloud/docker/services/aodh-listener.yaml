@@ -36,6 +36,10 @@ parameters:
     default: {}
     description: Parameters specific to the role
     type: json
+  UpgradeRemoveUnusedPackages:
+    default: false
+    description: Remove package if the service is being disabled during upgrade
+    type: boolean
 
 resources:
 
@@ -63,6 +67,8 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [AodhListenerBase, role_data, config_settings]
+      logging_source: {get_attr: [AodhListenerBase, role_data, logging_source]}
+      logging_groups: {get_attr: [AodhListenerBase, role_data, logging_groups]}
       step_config: &step_config
         list_join:
           - "\n"
@@ -112,3 +118,8 @@ outputs:
         - name: Stop and disable openstack-aodh-listener service
           tags: step2
           service: name=openstack-aodh-listener.service state=stopped enabled=no
+        - name: Remove openstack-aodh-listener package if operator requests it
+          yum: name=openstack-aodh-listener state=removed
+          tags: step2
+          ignore_errors: True
+          when: {get_param: UpgradeRemoveUnusedPackages}

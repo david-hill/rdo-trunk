@@ -57,6 +57,11 @@ parameters:
   EnableInternalTLS:
     type: boolean
     default: false
+  MysqlIPv6:
+    default: false
+    description: Enable IPv6 in MySQL
+    type: boolean
+
 
 conditions:
 
@@ -77,6 +82,7 @@ outputs:
             # in tripleo-puppet-elements.
             mysql::server::package_name: 'mariadb-galera-server'
             mysql::server::manage_config_file: true
+            mysql_ipv6: {get_param: MysqlIPv6}
             tripleo.mysql.firewall_rules:
               '104 mysql galera':
                 dport:
@@ -113,30 +119,34 @@ outputs:
               {get_param: [ServiceNetMap, MysqlNetwork]}
             tripleo::profile::base::database::mysql::generate_dropin_file_limit:
               {get_param: MysqlIncreaseFileLimit}
-          - generate_service_certificates: true
-            tripleo::profile::base::database::mysql::certificate_specs:
-              service_certificate: '/etc/pki/tls/certs/mysql.crt'
-              service_key: '/etc/pki/tls/private/mysql.key'
-              hostname:
-                str_replace:
-                  template: "%{hiera('cloud_name_NETWORK')}"
-                  params:
-                    NETWORK: {get_param: [ServiceNetMap, MysqlNetwork]}
-              dnsnames:
-                - str_replace:
+          - if:
+            - internal_tls_enabled
+            -
+              generate_service_certificates: true
+              tripleo::profile::base::database::mysql::certificate_specs:
+                service_certificate: '/etc/pki/tls/certs/mysql.crt'
+                service_key: '/etc/pki/tls/private/mysql.key'
+                hostname:
+                  str_replace:
                     template: "%{hiera('cloud_name_NETWORK')}"
                     params:
                       NETWORK: {get_param: [ServiceNetMap, MysqlNetwork]}
-                - str_replace:
-                    template:
-                      "%{hiera('fqdn_$NETWORK')}"
+                dnsnames:
+                  - str_replace:
+                      template: "%{hiera('cloud_name_NETWORK')}"
+                      params:
+                        NETWORK: {get_param: [ServiceNetMap, MysqlNetwork]}
+                  - str_replace:
+                      template:
+                        "%{hiera('fqdn_$NETWORK')}"
+                      params:
+                        $NETWORK: {get_param: [ServiceNetMap, MysqlNetwork]}
+                principal:
+                  str_replace:
+                    template: "mysql/%{hiera('cloud_name_NETWORK')}"
                     params:
-                      $NETWORK: {get_param: [ServiceNetMap, MysqlNetwork]}
-              principal:
-                str_replace:
-                  template: "mysql/%{hiera('cloud_name_NETWORK')}"
-                  params:
-                    NETWORK: {get_param: [ServiceNetMap, MysqlNetwork]}
+                      NETWORK: {get_param: [ServiceNetMap, MysqlNetwork]}
+            - {}
       step_config: |
         include ::tripleo::profile::base::database::mysql
       metadata_settings:

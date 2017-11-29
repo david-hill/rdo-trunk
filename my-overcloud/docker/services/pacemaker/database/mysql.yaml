@@ -97,6 +97,12 @@ outputs:
                   - 4567
                   - 4568
                   - 9200
+            tripleo::profile::pacemaker::database::mysql_bundle::bind_address:
+              str_replace:
+                template:
+                  "%{hiera('fqdn_$NETWORK')}"
+                params:
+                  $NETWORK: {get_param: [ServiceNetMap, MysqlNetwork]}
           -
             if:
             - internal_tls_enabled
@@ -104,6 +110,8 @@ outputs:
               tripleo::profile::pacemaker::database::mysql_bundle::ca_file:
                 get_param: InternalTLSCAFile
             - {}
+      logging_source: {get_attr: [MysqlPuppetBase, role_data, logging_source]}
+      logging_groups: {get_attr: [MysqlPuppetBase, role_data, logging_groups]}
       step_config: ""
       # BEGIN DOCKER SETTINGS #
       puppet_config:
@@ -159,15 +167,17 @@ outputs:
             detach: false
             image: {get_param: DockerMysqlImage}
             net: host
+            user: root
             # Kolla bootstraps aren't idempotent, explicitly checking if bootstrap was done
             command:
               - 'bash'
-              - '-ec'
+              - '-ecx'
               -
                 list_join:
                   - "\n"
                   - - 'if [ -e /var/lib/mysql/mysql ]; then exit 0; fi'
-                    - 'kolla_start'
+                    - 'echo -e "\n[mysqld]\nwsrep_provider=none" >> /etc/my.cnf'
+                    - 'sudo -u mysql -E kolla_start'
                     - 'mysqld_safe --skip-networking --wsrep-on=OFF &'
                     - 'timeout ${DB_MAX_TIMEOUT} /bin/bash -c ''until mysqladmin -uroot -p"${DB_ROOT_PASSWORD}" ping 2>/dev/null; do sleep 1; done'''
                     - 'mysql -uroot -p"${DB_ROOT_PASSWORD}" -e "CREATE USER ''clustercheck''@''localhost'' IDENTIFIED BY ''${DB_CLUSTERCHECK_PASSWORD}'';"'
@@ -266,20 +276,34 @@ outputs:
         - name: set is_bootstrap_node fact
           tags: common
           set_fact: is_bootstrap_node={{bootstrap_node.stdout|lower == ansible_hostname|lower}}
+        - name: Check cluster resource status
+          tags: step2
+          pacemaker_resource:
+            resource: galera
+            state: master
+            check_mode: true
+          ignore_errors: true
+          register: galera_res
         - name: Disable the galera cluster resource
           tags: step2
           pacemaker_resource:
             resource: galera
             state: disable
             wait_for_resource: true
-          when: is_bootstrap_node
+          register: output
+          retries: 5
+          until: output.rc == 0
+          when: is_bootstrap_node and galera_res|succeeded
         - name: Delete the stopped galera cluster resource.
           tags: step2
           pacemaker_resource:
             resource: galera
             state: delete
             wait_for_resource: true
-          when: is_bootstrap_node
+          register: output
+          retries: 5
+          until: output.rc == 0
+          when: is_bootstrap_node and galera_res|succeeded
         - name: Disable mysql service
           tags: step2
           service: name=mariadb enabled=no
@@ -289,3 +313,33 @@ outputs:
         - name: Restart xinetd service after clustercheck removal
           tags: step2
           service: name=xinetd state=restarted
+      update_tasks:
+        - name: Get docker Mariadb image
+          set_fact:
+            docker_image: {get_param: DockerMysqlImage}
+            docker_image_latest: *mysql_image_pcmklatest
+          when: step == '2'
+        - name: Get previous Mariadb image id
+          shell: "docker images | awk '/mariadb.* pcmklatest/{print $3}'"
+          register: mariadb_image_id
+        - block:
+            - name: Get a list of container using Mariadb image
+              shell: "docker ps -q -f 'ancestor={{mariadb_image_id.stdout}}'"
+              register: mariadb_containers_to_destroy
+            # It will be recreated with the delpoy step.
+            - name: Remove any container using the same Mariadb image
+              shell: "docker rm -fv {{item}}"
+              with_items: "{{ mariadb_containers_to_destroy.stdout_lines }}"
+            - name: Remove previous Mariadb images
+              shell: "docker rmi -f {{mariadb_image_id.stdout}}"
+          when:
+            - step == '2'
+            - mariadb_image_id.stdout != ''
+        - name: Pull latest Mariadb images
+          command: "docker pull {{docker_image}}"
+          when: step == "2"
+        - name: Retag pcmklatest to latest Mariadb image
+          shell: "docker tag {{docker_image}} {{docker_image_latest}}"
+          when: step == "2"
+        # Got to check that pacemaker_is_active is working fine with bundle.
+        # TODO: pacemaker_is_active resource doesn't support bundle.

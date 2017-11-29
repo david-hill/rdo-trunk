@@ -75,8 +75,8 @@ parameters:
     description: DB Sync Timeout default
     type: number
   Debug:
-    type: string
-    default: ''
+    type: boolean
+    default: false
     description: Set to True to enable debugging on all services.
   NovaDebug:
     default: ''
@@ -159,7 +159,8 @@ outputs:
       service_name: nova_base
       config_settings:
         map_merge:
-        - nova::rabbit_password: {get_param: RabbitPassword}
+        - nova::my_ip: {get_param: [ServiceNetMap, NovaApiNetwork]}
+          nova::rabbit_password: {get_param: RabbitPassword}
           nova::rabbit_userid: {get_param: RabbitUserName}
           nova::rabbit_use_ssl: {get_param: RabbitClientUseSSL}
           nova::rabbit_port: {get_param: RabbitClientPort}
@@ -222,7 +223,7 @@ outputs:
           nova::network::neutron::neutron_url: {get_param: [EndpointMap, NeutronInternal, uri]}
           nova::network::neutron::neutron_auth_url: {get_param: [EndpointMap, KeystoneV3Admin, uri]}
           nova::rabbit_heartbeat_timeout_threshold: 60
-          nova::cinder_catalog_info: 'volumev2:cinderv2:internalURL'
+          nova::cinder_catalog_info: 'volumev3:cinderv3:internalURL'
           nova::host: '%{::fqdn}'
           nova::notify_on_state_change: 'vm_and_task_state'
           nova::notification_driver: {get_param: NotificationDriver}

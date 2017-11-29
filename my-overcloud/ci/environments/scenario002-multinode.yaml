@@ -2,14 +2,13 @@ resource_registry:
   OS::TripleO::Controller::Net::SoftwareConfig: ../common/net-config-multinode.yaml
   OS::TripleO::Compute::Net::SoftwareConfig: ../common/net-config-multinode.yaml
   OS::TripleO::Services::BarbicanApi: ../../puppet/services/barbican-api.yaml
-  OS::TripleO::Services::Zaqar: ../../puppet/services/zaqar.yaml
+  OS::TripleO::Services::Zaqar: ../../puppet/services/zaqar-api.yaml
   OS::TripleO::Services::Ec2Api: ../../puppet/services/ec2-api.yaml
   OS::TripleO::Services::RabbitMQ: ../../puppet/services/pacemaker/rabbitmq.yaml
   OS::TripleO::Services::Redis: ../../puppet/services/pacemaker/database/redis.yaml
   OS::TripleO::Services::HAproxy: ../../puppet/services/pacemaker/haproxy.yaml
   OS::TripleO::Services::Pacemaker: ../../puppet/services/pacemaker.yaml
   OS::TripleO::Services::MySQL: ../../puppet/services/pacemaker/database/mysql.yaml
-  OS::TripleO::Services::MongoDb: ../../puppet/services/database/mongodb.yaml
   OS::TripleO::Services::CinderBackup: ../../puppet/services/pacemaker/cinder-backup.yaml
   OS::TripleO::Services::CinderVolume: ../../puppet/services/pacemaker/cinder-volume.yaml
   OS::TripleO::Services::Keepalived: OS::Heat::None
@@ -22,13 +21,13 @@ resource_registry:
 
 parameter_defaults:
   ControllerServices:
+    - OS::TripleO::Services::Clustercheck
     - OS::TripleO::Services::Docker
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::Keystone
     - OS::TripleO::Services::GlanceApi
     - OS::TripleO::Services::HeatApi
     - OS::TripleO::Services::HeatApiCfn
-    - OS::TripleO::Services::HeatApiCloudwatch
     - OS::TripleO::Services::HeatEngine
     - OS::TripleO::Services::MySQL
     - OS::TripleO::Services::MySQLClient
@@ -62,7 +61,6 @@ parameter_defaults:
     - OS::TripleO::Services::SwiftStorage
     - OS::TripleO::Services::SwiftRingBuilder
     - OS::TripleO::Services::BarbicanApi
-    - OS::TripleO::Services::MongoDb
     - OS::TripleO::Services::Zaqar
     - OS::TripleO::Services::Ec2Api
     - OS::TripleO::Services::TripleoPackages
@@ -85,5 +83,7 @@ parameter_defaults:
     nova::compute::libvirt::services::libvirt_virt_type: qemu
     nova::compute::libvirt::libvirt_virt_type: qemu
   Debug: true
+  ZaqarMessageStore: 'swift'
+  ZaqarManagementStore: 'sqlalchemy'
   SwiftCeilometerPipelineEnabled: false
   NotificationDriver: 'noop'

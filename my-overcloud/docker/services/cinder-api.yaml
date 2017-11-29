@@ -39,6 +39,10 @@ parameters:
   EnableInternalTLS:
     type: boolean
     default: false
+  UpgradeRemoveUnusedPackages:
+    default: false
+    description: Remove package if the service is being disabled during upgrade
+    type: boolean
 
 conditions:
 
@@ -68,6 +72,8 @@ outputs:
     value:
       service_name: {get_attr: [CinderBase, role_data, service_name]}
       config_settings: {get_attr: [CinderBase, role_data, config_settings]}
+      logging_source: {get_attr: [CinderBase, role_data, logging_source]}
+      logging_groups: {get_attr: [CinderBase, role_data, logging_groups]}
       step_config: &step_config
         list_join:
           - "\n"
@@ -111,6 +117,7 @@ outputs:
             user: root
             volumes:
               - /var/log/containers/cinder:/var/log/cinder
+              - /var/log/containers/httpd/cinder-api:/var/log/httpd
             command: ['/bin/bash', '-c', 'chown -R cinder:cinder /var/log/cinder']
         step_3:
           cinder_api_db_sync:
@@ -125,6 +132,7 @@ outputs:
                 -
                   - /var/lib/config-data/cinder/etc/cinder/:/etc/cinder/:ro
                   - /var/log/containers/cinder:/var/log/cinder
+                  - /var/log/containers/httpd/cinder-api:/var/log/httpd
             command:
               - '/usr/bin/bootstrap_host_exec'
               - 'cinder_api'
@@ -145,6 +153,7 @@ outputs:
                   - /var/lib/kolla/config_files/cinder_api.json:/var/lib/kolla/config_files/config.json:ro
                   - /var/lib/config-data/puppet-generated/cinder/:/var/lib/kolla/config_files/src:ro
                   - /var/log/containers/cinder:/var/log/cinder
+                  - /var/log/containers/httpd/cinder-api:/var/log/httpd
                   -
                     if:
                       - internal_tls_enabled
@@ -163,6 +172,8 @@ outputs:
             user: root
             privileged: false
             restart: always
+            healthcheck:
+              test: /bin/true
             volumes:
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
@@ -170,6 +181,7 @@ outputs:
                   - /var/lib/kolla/config_files/cinder_api_cron.json:/var/lib/kolla/config_files/config.json:ro
                   - /var/lib/config-data/puppet-generated/cinder/:/var/lib/kolla/config_files/src:ro
                   - /var/log/containers/cinder:/var/log/cinder
+                  - /var/log/containers/httpd/cinder-api:/var/log/httpd
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
 
@@ -178,9 +190,22 @@ outputs:
       host_prep_tasks:
         - name: create persistent logs directory
           file:
-            path: /var/log/containers/cinder
+            path: "{{ item }}"
             state: directory
+          with_items:
+            - /var/log/containers/cinder
+            - /var/log/containers/httpd/cinder-api
       upgrade_tasks:
         - name: Stop and disable cinder_api service
           tags: step2
           service: name=httpd state=stopped enabled=no
+        - name: remove old cinder cron jobs
+          tags: step2
+          file:
+            path: /var/spool/cron/cinder
+            state: absent
+        - name: Remove httpd package if operator requests it
+          yum: name=httpd state=removed
+          tags: step2
+          ignore_errors: True
+          when: {get_param: UpgradeRemoveUnusedPackages}

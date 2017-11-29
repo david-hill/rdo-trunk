@@ -36,6 +36,10 @@ parameters:
     default: {}
     description: Parameters specific to the role
     type: json
+  UpgradeRemoveUnusedPackages:
+    default: false
+    description: Remove package if the service is being disabled during upgrade
+    type: boolean
 
 resources:
 
@@ -58,6 +62,8 @@ outputs:
     value:
       service_name: {get_attr: [CeilometerAgentCentralBase, role_data, service_name]}
       config_settings: {get_attr: [CeilometerAgentCentralBase, role_data, config_settings]}
+      logging_source: {get_attr: [CeilometerAgentCentralBase, role_data, logging_source]}
+      logging_groups: {get_attr: [CeilometerAgentCentralBase, role_data, logging_groups]}
       step_config: &step_config
         get_attr: [CeilometerAgentCentralBase, role_data, step_config]
       service_config_settings: {get_attr: [CeilometerAgentCentralBase, role_data, service_config_settings]}
@@ -69,7 +75,7 @@ outputs:
         config_image: {get_param: DockerCeilometerConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/ceilometer_agent_central.json:
-          command: /usr/bin/ceilometer-polling --polling-namespaces central
+          command: /usr/bin/ceilometer-polling --polling-namespaces central --logfile /var/log/ceilometer/central.log
           config_files:
             - source: "/var/lib/kolla/config_files/src/*"
               dest: "/"
@@ -116,7 +122,17 @@ outputs:
               - '/usr/bin/bootstrap_host_exec'
               - 'ceilometer_agent_central'
               - "su ceilometer -s /bin/bash -c 'for n in {1..10}; do /usr/bin/ceilometer-upgrade --skip-metering-database && exit 0 || sleep 5; done; exit 1'"
+      host_prep_tasks:
+        - name: create persistent logs directory
+          file:
+            path: /var/log/containers/ceilometer
+            state: directory
       upgrade_tasks:
         - name: Stop and disable ceilometer agent central service
           tags: step2
           service: name=openstack-ceilometer-central state=stopped enabled=no
+        - name: Remove openstack-ceilometer-central package if operator requests it
+          yum: name=openstack-ceilometer-central state=removed
+          tags: step2
+          ignore_errors: True
+          when: {get_param: UpgradeRemoveUnusedPackages}

@@ -22,13 +22,14 @@ import glob
 import json
 import logging
 import os
-import sys
 import subprocess
 import sys
 import tempfile
+import time
 import multiprocessing
 
 logger = None
+
 
 def get_logger():
     global logger
@@ -59,33 +60,43 @@ def short_hostname():
 
 def pull_image(name):
     log.info('Pulling image: %s' % name)
-    subproc = subprocess.Popen(['/usr/bin/docker', 'pull', name],
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-    cmd_stdout, cmd_stderr = subproc.communicate()
+    retval = -1
+    count = 0
+    while retval != 0:
+        count += 1
+        subproc = subprocess.Popen(['/usr/bin/docker', 'pull', name],
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+
+        cmd_stdout, cmd_stderr = subproc.communicate()
+        retval = subproc.returncode
+        if retval != 0:
+            time.sleep(3)
+            log.warning('docker pull failed: %s' % cmd_stderr)
+            log.warning('retrying pulling image: %s' % name)
+        if count >= 5:
+            log.error('Failed to pull image: %s' % name)
+            break
     if cmd_stdout:
         log.debug(cmd_stdout)
     if cmd_stderr:
         log.debug(cmd_stderr)
 
 
-def match_config_volume(prefix, config):
-    # Match the mounted config volume - we can't just use the
+def match_config_volumes(prefix, config):
+    # Match the mounted config volumes - we can't just use the
     # key as e.g "novacomute" consumes config-data/nova
     volumes = config.get('volumes', [])
-    config_volume=None
-    for v in volumes:
-        if v.startswith(prefix):
-            config_volume =  os.path.relpath(
-                v.split(":")[0], prefix).split("/")[0]
-            break
-    return config_volume
+    return sorted([os.path.dirname(v.split(":")[0]) for v in volumes if
+                   v.startswith(prefix)])
 
 
-def get_config_hash(prefix, config_volume):
-    hashfile = os.path.join(prefix, "%s.md5sum" % config_volume)
+def get_config_hash(config_volume):
+    hashfile = "%s.md5sum" % config_volume
+    log.debug("Looking for hashfile %s for config_volume %s" % (hashfile, config_volume))
     hash_data = None
     if os.path.isfile(hashfile):
+        log.debug("Got hashfile %s for config_volume %s" % (hashfile, config_volume))
         with open(hashfile) as f:
             hash_data = f.read().rstrip()
     return hash_data
@@ -157,15 +168,15 @@ for service in (json_data or []):
     if not manifest or not config_image:
         continue
 
-    log.info('config_volume %s' % config_volume)
-    log.info('puppet_tags %s' % puppet_tags)
-    log.info('manifest %s' % manifest)
-    log.info('config_image %s' % config_image)
-    log.info('volumes %s' % volumes)
+    log.debug('config_volume %s' % config_volume)
+    log.debug('puppet_tags %s' % puppet_tags)
+    log.debug('manifest %s' % manifest)
+    log.debug('config_image %s' % config_image)
+    log.debug('volumes %s' % volumes)
     # We key off of config volume for all configs.
     if config_volume in configs:
         # Append puppet tags and manifest.
-        log.info("Existing service, appending puppet tags and manifest")
+        log.debug("Existing service, appending puppet tags and manifest")
         if puppet_tags:
             configs[config_volume][1] = '%s,%s' % (configs[config_volume][1],
                                                    puppet_tags)
@@ -176,14 +187,16 @@ for service in (json_data or []):
             log.warn("Config containers do not match even though"
                      " shared volumes are the same!")
     else:
-        log.info("Adding new service")
+        log.debug("Adding new service")
         configs[config_volume] = service
 
 log.info('Service compilation completed.')
 
+
 def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volumes)):
     log = get_logger()
-    log.info('Started processing puppet configs')
+    log.info('Starting configuration of %s using image %s' % (config_volume,
+             config_image))
     log.debug('config_volume %s' % config_volume)
     log.debug('puppet_tags %s' % puppet_tags)
     log.debug('manifest %s' % manifest)
@@ -210,8 +223,14 @@ def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volume
         touch /tmp/the_origin_of_time
         sync
 
+        set +e
         FACTER_hostname=$HOSTNAME FACTER_uuid=docker /usr/bin/puppet apply \
-        --color=false --logdest syslog --logdest console $TAGS /etc/config.pp
+        --detailed-exitcodes --color=false --logdest syslog --logdest console $TAGS /etc/config.pp
+        rc=$?
+        set -e
+        if [ $rc -ne 2 -a $rc -ne 0 ]; then
+            exit $rc
+        fi
 
         # Disables archiving
         if [ -z "$NO_ARCHIVE" ]; then
@@ -234,6 +253,7 @@ def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volume
             # Write a checksum of the config-data dir, this is used as a
             # salt to trigger container restart when the config changes
             tar -c -f - /var/lib/config-data/${NAME} --mtime='1970-01-01' | md5sum | awk '{print $1}' > /var/lib/config-data/${NAME}.md5sum
+            tar -c -f - /var/lib/config-data/puppet-generated/${NAME} --mtime='1970-01-01' | md5sum | awk '{print $1}' > /var/lib/config-data/puppet-generated/${NAME}.md5sum
         fi
         """)
 
@@ -256,7 +276,7 @@ def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volume
                 '--volume', '%s:/etc/config.pp:ro' % tmp_man.name,
                 '--volume', '/etc/puppet/:/tmp/puppet-etc/:ro',
                 '--volume', '/usr/share/openstack-puppet/modules/:/usr/share/openstack-puppet/modules/:ro',
-                '--volume', '/var/lib/config-data/:/var/lib/config-data/:rw',
+                '--volume', '%s:/var/lib/config-data/:rw' % os.environ.get('CONFIG_VOLUME_PREFIX', '/var/lib/config-data'),
                 '--volume', 'tripleo_logs:/var/log/tripleo/',
                 # Syslog socket for puppet logs
                 '--volume', '/dev/log:/dev/log',
@@ -290,7 +310,9 @@ def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volume
         subproc = subprocess.Popen(dcmd, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, env=env)
         cmd_stdout, cmd_stderr = subproc.communicate()
-        if subproc.returncode != 0:
+        # puppet with --detailed-exitcodes will return 0 for success and no changes
+        # and 2 for success and resource changes. Other numbers are failures
+        if subproc.returncode not in [0, 2]:
             log.error('Failed running docker-puppet.py for %s' % config_volume)
             if cmd_stdout:
                 log.error(cmd_stdout)
@@ -304,7 +326,7 @@ def mp_puppet_config((config_volume, puppet_tags, manifest, config_image, volume
             # only delete successful runs, for debugging
             rm_container('docker-puppet-%s' % config_volume)
 
-        log.info('Finished processing puppet configs')
+        log.info('Finished processing puppet configs for %s' % (config_volume))
         return subproc.returncode
 
 # Holds all the information for each process to consume.
@@ -333,12 +355,14 @@ for p in process_map:
 
 # Fire off processes to perform each configuration.  Defaults
 # to the number of CPUs on the system.
+log.info('Starting multiprocess configuration steps.  Using %d processes.' %
+         process_count)
 p = multiprocessing.Pool(process_count)
 returncodes = list(p.map(mp_puppet_config, process_map))
 config_volumes = [pm[0] for pm in process_map]
 success = True
 for returncode, config_volume in zip(returncodes, config_volumes):
-    if returncode != 0:
+    if returncode not in [0, 2]:
         log.error('ERROR configuring %s' % config_volume)
         success = False
 
@@ -354,18 +378,20 @@ for infile in infiles:
         infile_data = json.load(f)
 
     for k, v in infile_data.iteritems():
-        config_volume = match_config_volume(config_volume_prefix, v)
-        if config_volume:
-            config_hash = get_config_hash(config_volume_prefix, config_volume)
-            if config_hash:
-                env = v.get('environment', [])
-                env.append("TRIPLEO_CONFIG_HASH=%s" % config_hash)
-                log.debug("Updating config hash for %s, config_volume=%s hash=%s" % (k, config_volume, config_hash))
-                infile_data[k]['environment'] = env
+        config_volumes = match_config_volumes(config_volume_prefix, v)
+        config_hashes = [get_config_hash(volume_path) for volume_path in config_volumes]
+        config_hashes = filter(None, config_hashes)
+        config_hash = '-'.join(config_hashes)
+        if config_hash:
+            env = v.get('environment', [])
+            env.append("TRIPLEO_CONFIG_HASH=%s" % config_hash)
+            log.debug("Updating config hash for %s, config_volume=%s hash=%s" % (k, config_volume, config_hash))
+            infile_data[k]['environment'] = env
 
     outfile = os.path.join(os.path.dirname(infile), "hashed-" + os.path.basename(infile))
     with open(outfile, 'w') as out_f:
-        json.dump(infile_data, out_f)
+        os.chmod(out_f.name, 0600)
+        json.dump(infile_data, out_f, indent=2)
 
 if not success:
     sys.exit(1)

@@ -39,6 +39,10 @@ parameters:
   EnableInternalTLS:
     type: boolean
     default: false
+  UpgradeRemoveUnusedPackages:
+    default: false
+    description: Remove package if the service is being disabled during upgrade
+    type: boolean
 
 conditions:
 
@@ -62,6 +66,9 @@ resources:
       RoleName: {get_param: RoleName}
       RoleParameters: {get_param: RoleParameters}
 
+  NovaApiLogging:
+    type: OS::TripleO::Services::Logging::NovaApi
+
 outputs:
   role_data:
     description: Role data for the Nova API role.
@@ -70,7 +77,10 @@ outputs:
       config_settings:
         map_merge:
           - get_attr: [NovaApiBase, role_data, config_settings]
+          - get_attr: [NovaApiLogging, config_settings]
           - apache::default_vhost: false
+      logging_source: {get_attr: [NovaApiBase, role_data, logging_source]}
+      logging_groups: {get_attr: [NovaApiBase, role_data, logging_groups]}
       step_config: &step_config
         list_join:
           - "\n"
@@ -108,29 +118,22 @@ outputs:
               owner: nova:nova
               recurse: true
       docker_config:
-        # db sync runs before permissions set by kolla_config
         step_2:
-          nova_init_logs:
-            image: &nova_api_image {get_param: DockerNovaApiImage}
-            privileged: false
-            user: root
-            volumes:
-              - /var/log/containers/nova:/var/log/nova
-            command: ['/bin/bash', '-c', 'mkdir -p /var/log/httpd; chown -R nova:nova /var/log/nova']
+          get_attr: [NovaApiLogging, docker_config, step_2]
         step_3:
           nova_api_db_sync:
             start_order: 0
-            image: *nova_api_image
+            image: &nova_api_image {get_param: DockerNovaApiImage}
             net: host
             detach: false
             user: root
             volumes: &nova_api_bootstrap_volumes
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
+                - {get_attr: [NovaApiLogging, volumes]}
                 -
                   - /var/lib/config-data/nova/etc/my.cnf.d/tripleo.cnf:/etc/my.cnf.d/tripleo.cnf:ro
                   - /var/lib/config-data/nova/etc/nova/:/etc/nova/:ro
-                  - /var/log/containers/nova:/var/log/nova
             command: "/usr/bin/bootstrap_host_exec nova_api su nova -s /bin/bash -c '/usr/bin/nova-manage api_db sync'"
           # FIXME: we probably want to wait on the 'cell_v2 update' in order for this
           # to be capable of upgrading a baremetal setup. This is to ensure the name
@@ -174,10 +177,10 @@ outputs:
             volumes:
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
+                - {get_attr: [NovaApiLogging, volumes]}
                 -
                   - /var/lib/kolla/config_files/nova_api.json:/var/lib/kolla/config_files/config.json:ro
                   - /var/lib/config-data/puppet-generated/nova/:/var/lib/kolla/config_files/src:ro
-                  - /var/log/containers/nova:/var/log/nova
                   -
                     if:
                       - internal_tls_enabled
@@ -196,13 +199,15 @@ outputs:
             user: root
             privileged: false
             restart: always
+            healthcheck:
+              test: /bin/true
             volumes:
               list_concat:
                 - {get_attr: [ContainersCommon, volumes]}
+                - {get_attr: [NovaApiLogging, volumes]}
                 -
                   - /var/lib/kolla/config_files/nova_api_cron.json:/var/lib/kolla/config_files/config.json:ro
                   - /var/lib/config-data/puppet-generated/nova/:/var/lib/kolla/config_files/src:ro
-                  - /var/log/containers/nova:/var/log/nova
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
         step_5:
@@ -213,15 +218,21 @@ outputs:
             detach: false
             volumes: *nova_api_bootstrap_volumes
             user: root
-            command: "/usr/bin/bootstrap_host_exec nova_api su nova -s /bin/bash -c '/usr/bin/nova-manage cell_v2 discover_hosts'"
+            command: "/usr/bin/bootstrap_host_exec nova_api su nova -s /bin/bash -c '/usr/bin/nova-manage cell_v2 discover_hosts --verbose'"
       metadata_settings:
         get_attr: [NovaApiBase, role_data, metadata_settings]
-      host_prep_tasks:
-        - name: create persistent logs directory
-          file:
-            path: /var/log/containers/nova
-            state: directory
+      host_prep_tasks: {get_attr: [NovaApiLogging, host_prep_tasks]}
       upgrade_tasks:
         - name: Stop and disable nova_api service
           tags: step2
           service: name=openstack-nova-api state=stopped enabled=no
+        - name: Remove openstack-nova-api package if operator requests it
+          yum: name=openstack-nova-api state=removed
+          tags: step2
+          ignore_errors: True
+          when: {get_param: UpgradeRemoveUnusedPackages}
+        - name: remove old nova cron jobs
+          tags: step2
+          file:
+            path: /var/spool/cron/nova
+            state: absent

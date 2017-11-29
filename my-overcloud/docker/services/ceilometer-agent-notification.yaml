@@ -36,6 +36,10 @@ parameters:
     default: {}
     description: Parameters specific to the role
     type: json
+  UpgradeRemoveUnusedPackages:
+    default: false
+    description: Remove package if the service is being disabled during upgrade
+    type: boolean
 
 resources:
 
@@ -58,6 +62,8 @@ outputs:
     value:
       service_name: {get_attr: [CeilometerAgentNotificationBase, role_data, service_name]}
       config_settings: {get_attr: [CeilometerAgentNotificationBase, role_data, config_settings]}
+      logging_source: {get_attr: [CeilometerAgentNotificationBase, role_data, logging_source]}
+      logging_groups: {get_attr: [CeilometerAgentNotificationBase, role_data, logging_groups]}
       step_config: &step_config
         get_attr: [CeilometerAgentNotificationBase, role_data, step_config]
       service_config_settings: {get_attr: [CeilometerAgentNotificationBase, role_data, service_config_settings]}
@@ -69,12 +75,20 @@ outputs:
         config_image: {get_param: DockerCeilometerConfigImage}
       kolla_config:
         /var/lib/kolla/config_files/ceilometer_agent_notification.json:
-          command: /usr/bin/ceilometer-agent-notification
+          command: /usr/bin/ceilometer-agent-notification --logfile /var/log/ceilometer/agent-notification.log
           config_files:
             - source: "/var/lib/kolla/config_files/src/*"
               dest: "/"
               merge: true
               preserve_properties: true
+            - source: "/var/lib/kolla/config_files/src-panko/*"
+              dest: "/"
+              merge: true
+              preserve_properties: true
+          permissions:
+            - path: /etc/panko
+              owner: root:ceilometer
+              recurse: true
       docker_config:
         step_3:
           ceilometer_init_log:
@@ -96,9 +110,21 @@ outputs:
                 -
                   - /var/lib/kolla/config_files/ceilometer_agent_notification.json:/var/lib/kolla/config_files/config.json:ro
                   - /var/lib/config-data/puppet-generated/ceilometer/:/var/lib/kolla/config_files/src:ro
+                  - /var/lib/config-data/puppet-generated/panko/:/var/lib/kolla/config_files/src-panko:ro
+                  - /var/log/containers/ceilometer:/var/log/ceilometer
             environment:
               - KOLLA_CONFIG_STRATEGY=COPY_ALWAYS
+      host_prep_tasks:
+        - name: create persistent logs directory
+          file:
+            path: /var/log/containers/ceilometer
+            state: directory
       upgrade_tasks:
         - name: Stop and disable ceilometer agent notification service
           tags: step2
           service: name=openstack-ceilometer-notification state=stopped enabled=no
+        - name: Remove openstack-ceilometer-notification package if operator requests it
+          yum: name=openstack-ceilometer-notification state=removed
+          tags: step2
+          ignore_errors: True
+          when: {get_param: UpgradeRemoveUnusedPackages}

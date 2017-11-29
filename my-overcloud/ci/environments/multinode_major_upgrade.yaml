@@ -14,6 +14,7 @@ resource_registry:
 parameter_defaults:
   ControllerServices:
     - OS::TripleO::Services::CACerts
+    - OS::TripleO::Services::Clustercheck
     - OS::TripleO::Services::Docker
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::Keystone
@@ -30,7 +31,6 @@ parameter_defaults:
     - OS::TripleO::Services::CinderVolume
     - OS::TripleO::Services::HeatApi
     - OS::TripleO::Services::HeatApiCfn
-    - OS::TripleO::Services::HeatApiCloudwatch
     - OS::TripleO::Services::HeatEngine
     - OS::TripleO::Services::SaharaApi
     - OS::TripleO::Services::SaharaEngine

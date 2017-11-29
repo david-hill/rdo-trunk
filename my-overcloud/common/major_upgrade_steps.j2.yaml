@@ -54,7 +54,6 @@ resources:
               params:
                 ROLE_NAME: {{role.name}}
           - get_file: ../extraconfig/tasks/pacemaker_common_functions.sh
-          - get_file: ../extraconfig/tasks/run_puppet.sh
           - get_file: ../extraconfig/tasks/tripleo_upgrade_node.sh
 
   {{role.name}}DeliverUpgradeScriptDeployment:
@@ -129,32 +128,6 @@ resources:
   {%- endfor %}
 {%- endfor %}
 
-# Dump the puppet manifests to be apply later when disable_upgrade_deployment
-# is to true
-{% for role in roles  if role.disable_upgrade_deployment|default(false) %}
-  {{role.name}}DeliverPuppetConfig:
-    type: OS::Heat::SoftwareConfig
-    properties:
-      group: script
-      config:
-        list_join:
-        - ''
-        - - str_replace:
-              template: |
-                #!/bin/bash
-                cat > /root/{{role.name}}_puppet_config.pp << ENDOFCAT
-                PUPPET_CLASSES
-                ENDOFCAT
-              params:
-                PUPPET_CLASSES: {get_param: [role_data, {{role.name}}, step_config]}
-
-  {{role.name}}DeliverPuppetDeployment:
-    type: OS::Heat::SoftwareDeploymentGroup
-    properties:
-      servers:  {get_param: [servers, {{role.name}}]}
-      config: {get_resource: {{role.name}}DeliverPuppetConfig}
-{% endfor %}
-
 # Upgrade Steps for all roles
 {%- for step in range(0, upgrade_steps_max) %}
   # Config resources for step {{step}}
@@ -214,6 +187,43 @@ resources:
       role_data: {get_param: role_data}
       ctlplane_service_ips: {get_param: ctlplane_service_ips}
 
+{%- for step in range(0, upgrade_steps_max) %}
+  {%- for role in roles %}
+  {{role.name}}PostUpgradeConfig_Config{{step}}:
+    type: OS::TripleO::UpgradeConfig
+    depends_on:
+      {%- for role_inside in enabled_roles %}
+      {%- if step > 0 %}
+      - {{role_inside.name}}PostUpgradeConfig_Deployment{{step -1}}
+      {%- else %}
+      - AllNodesPostUpgradeSteps
+      {%- endif %}
+      {%- endfor %}
+    properties:
+      UpgradeStepConfig: {get_param: [role_data, {{role.name}}, post_upgrade_tasks]}
+      step: {{step}}
+  {%- endfor %}
+
+  {%- for role in enabled_roles %}
+  {{role.name}}PostUpgradeConfig_Deployment{{step}}:
+    type: OS::Heat::SoftwareDeploymentGroup
+    depends_on:
+      {%- for role_inside in enabled_roles %}
+      {%- if step > 0 %}
+      - {{role_inside.name}}PostUpgradeConfig_Deployment{{step -1}}
+      {%- else %}
+      - AllNodesPostUpgradeSteps
+      {%- endif %}
+      {%- endfor %}
+    properties:
+      servers: {get_param: [servers, {{role.name}}]}
+      config: {get_resource: {{role.name}}PostUpgradeConfig_Config{{step}}}
+      input_values:
+        role: {{role.name}}
+        update_identifier: {get_param: UpdateIdentifier}
+  {%- endfor %}
+{%- endfor %}
+
 outputs:
   # Output the config for each role, just use Step1 as the config should be
   # the same for all steps (only the tag provided differs)
@@ -223,3 +233,7 @@ outputs:
 {% for role in roles %}
       {{role.name.lower()}}: {get_attr: [{{role.name}}UpgradeConfig_Step1, upgrade_config]}
 {% endfor %}
+  RoleConfig:
+    description: Mapping of config data for all roles
+    value: {get_attr: [AllNodesPostUpgradeSteps, RoleConfig]}
+

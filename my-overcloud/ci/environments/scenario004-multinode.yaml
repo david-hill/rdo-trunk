@@ -36,13 +36,13 @@ parameter_defaults:
     - OS::TripleO::Services::CephMon
     - OS::TripleO::Services::CephOSD
     - OS::TripleO::Services::CephRgw
+    - OS::TripleO::Services::Clustercheck
     - OS::TripleO::Services::Docker
     - OS::TripleO::Services::Kernel
     - OS::TripleO::Services::Keystone
     - OS::TripleO::Services::GlanceApi
     - OS::TripleO::Services::HeatApi
     - OS::TripleO::Services::HeatApiCfn
-    - OS::TripleO::Services::HeatApiCloudwatch
     - OS::TripleO::Services::HeatEngine
     - OS::TripleO::Services::MySQL
     - OS::TripleO::Services::MySQLClient
@@ -88,6 +88,9 @@ parameter_defaults:
   ExtraConfig:
     ceph::profile::params::osd_max_object_name_len: 256
     ceph::profile::params::osd_max_object_namespace_len: 64
+    #NOTE(gfidente): necessary when deploying a single OSD
+    ceph::profile::params::osd_pool_default_pg_num: 32
+    ceph::profile::params::osd_pool_default_pgp_num: 32
   #NOTE: These ID's and keys should be regenerated for
   # a production deployment. What is here is suitable for
   # developer and CI testing only.

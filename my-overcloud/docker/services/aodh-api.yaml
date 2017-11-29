@@ -39,6 +39,10 @@ parameters:
   EnableInternalTLS:
     type: boolean
     default: false
+  UpgradeRemoveUnusedPackages:
+    default: false
+    description: Remove package if the service is being disabled during upgrade
+    type: boolean
 
 conditions:
 
@@ -70,6 +74,8 @@ outputs:
         map_merge:
           - get_attr: [AodhApiPuppetBase, role_data, config_settings]
           - apache::default_vhost: false
+      logging_source: {get_attr: [AodhApiPuppetBase, role_data, logging_source]}
+      logging_groups: {get_attr: [AodhApiPuppetBase, role_data, logging_groups]}
       step_config: &step_config
         list_join:
           - "\n"
@@ -102,7 +108,8 @@ outputs:
             user: root
             volumes:
               - /var/log/containers/aodh:/var/log/aodh
-            command: ['/bin/bash', '-c', 'mkdir -p /var/log/httpd; chown -R aodh:aodh /var/log/aodh']
+              - /var/log/containers/httpd/aodh-api:/var/log/httpd
+            command: ['/bin/bash', '-c', 'chown -R aodh:aodh /var/log/aodh']
         step_3:
           aodh_db_sync:
             image: *aodh_api_image
@@ -117,6 +124,7 @@ outputs:
                   - /var/lib/config-data/aodh/etc/my.cnf.d/tripleo.cnf:/etc/my.cnf.d/tripleo.cnf:ro
                   - /var/lib/config-data/aodh/etc/aodh/:/etc/aodh/:ro
                   - /var/log/containers/aodh:/var/log/aodh
+                  - /var/log/containers/httpd/aodh-api:/var/log/httpd
             command: "/usr/bin/bootstrap_host_exec aodh_api su aodh -s /bin/bash -c /usr/bin/aodh-dbsync"
         step_4:
           aodh_api:
@@ -131,6 +139,7 @@ outputs:
                   - /var/lib/kolla/config_files/aodh_api.json:/var/lib/kolla/config_files/config.json:ro
                   - /var/lib/config-data/puppet-generated/aodh/:/var/lib/kolla/config_files/src:ro
                   - /var/log/containers/aodh:/var/log/aodh
+                  - /var/log/containers/httpd/aodh-api:/var/log/httpd
                   -
                     if:
                       - internal_tls_enabled
@@ -146,11 +155,19 @@ outputs:
       host_prep_tasks:
       - name: create persistent logs directory
         file:
-          path: /var/log/containers/aodh
+          path: "{{ item }}"
           state: directory
+        with_items:
+          - /var/log/containers/aodh
+          - /var/log/containers/httpd/aodh-api
       upgrade_tasks:
         - name: Stop and disable aodh service (running under httpd)
           tags: step2
           service: name=httpd state=stopped enabled=no
+        - name: Remove openstack-aodh-api package if operator requests it
+          yum: name=openstack-aodh-api state=removed
+          tags: step2
+          ignore_errors: True
+          when: {get_param: UpgradeRemoveUnusedPackages}
       metadata_settings:
         get_attr: [AodhApiPuppetBase, role_data, metadata_settings]
